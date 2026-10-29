@@ -106,18 +106,3 @@ test('artifact.ingest refuses the case oracle and .ctf state', async () => {
     tp.cleanup();
   }
 });
-
-test('artifact.ingest refuses files outside workspace, temp and configured roots', async () => {
-  const tp = makeProject();
-  const outsideDir = fs.mkdtempSync(path.join(os.homedir(), '.pi4ctf-ingest-'));
-  const outside = path.join(outsideDir, 'outside.txt');
-  try {
-    fs.writeFileSync(outside, 'outside\n');
-    const res = await dispatch({ op: 'artifact.ingest', root: tp.root, input: { path: outside } });
-    assert.equal(res.ok, false);
-    assert.equal(res.ok ? '' : res.error.code, 'SECURITY');
-  } finally {
-    tp.cleanup();
-    fs.rmSync(outsideDir, { recursive: true, force: true });
-  }
-});

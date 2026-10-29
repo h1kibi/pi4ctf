@@ -93,7 +93,7 @@ Use these tools for challenge work:
 - `deepseek_fetch` — fetch a page through DeepSeek's Fetch API as Markdown.
 - `deepseek_vision` — send an image item (`cmd-0001.0003`) to DeepSeek `deepseek-flash` vision for OCR/screenshot analysis.
 - `case_evidence` — read a bounded, UNTRUSTED_DATA-wrapped excerpt of `cmd-0001` or `cmd-0001.0003`; supports `grep` (regex), `context`, `maxMatches`, `head`, `tail`, or offset/limit. A probe-batch parent (`cmd-0001`) returns `children`; `grep` on the parent searches all children; read a child (`cmd-0001.0003`) for exact context. Use it instead of reading item artifacts with the host read tool.
-- `artifact_ingest` — copy an external evidence file (webhook capture, `/tmp` log, downloaded response) into `.ctf/artifacts` and create a synthetic outcome/observation so claim/flag can use it; sources must be under `workspace/`, the OS temp dir, or `PI4CTF_INGEST_ROOTS` (the oracle and `.ctf/` are refused); `transform=hex|base64` creates a derived artifact and records sourceSha256 + derivedFrom.
+- `artifact_ingest` — copy an external evidence file (webhook capture, `/tmp` log, downloaded response) into `.ctf/artifacts` and create a synthetic outcome/observation so claim/flag can use it; the case oracle and `.ctf/` are refused; `transform=hex|base64` creates a derived artifact and records sourceSha256 + derivedFrom.
 
 Do not use pi's `bash` for challenge commands when `run`/`session` can do the job.
 You may use pi's `read` to inspect source files and small artifacts.

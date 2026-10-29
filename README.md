@@ -199,7 +199,7 @@ flowchart LR
 - preflight 把题目根目录下的新文件视为附件材料；agent 生成物统一放 `workspace/`，`workspace/` 默认不扫描。`case_preflight includeWorkspace=true` 才会扫描 workspace，`includeBuild=true` 才会扫描 `build/out/dist/target/obj/__pycache__/screenshots/shots`；两者都优先于根目录占用文件名额。
 - preflight 只按路径分类：`workspace/` 和 `includeBuild=true` 的输出目录是 `generated`；根目录文件一律是 `root files`，不按后缀/mtime 猜测。**生成物必须放 workspace/ 或 build/ 等输出目录；放 root 会混进 unclassified rootFiles。** 文件数达到 cap 会写 `file cap reached` note。
 - Observation 由 `run`/`session` 自动产出；claim 必须带 quote，quote 可只给 text（内核定位唯一 substring），也可显式给 span；Fact 由内核验证。
-- `artifact_ingest` 支持 `transform=hex|base64`，记录 sourceSha256 + derivedFrom，派生 artifact 可继续走 claim/flag。来源限于 `workspace/`、系统临时目录或 `PI4CTF_INGEST_ROOTS`（平台路径分隔符分隔）；oracle 与 `.ctf/` 一律拒绝，防止把 ground truth 或状态文件复制成证据。
+- `artifact_ingest` 支持 `transform=hex|base64`，记录 sourceSha256 + derivedFrom，派生 artifact 可继续走 claim/flag。oracle 与 `.ctf/` 一律拒绝，防止把 ground truth 或状态文件复制成证据。
 - `case_close` 只接受 `failed` / `stopped`；`completed` 必须走 `case_complete`（verified Fact 门禁），不能由 close 绕过。
 - probe 的 HTTP `bodyFile` 读取项目文件，内容 digest 进入 route signature；`deepseek_search(needContent=true)` 默认只回 4000 content chars。
 - flag 必须带 artifact 来源 + oracle，且 artifact/Fact 属于当前 target/instance；oracle 不可用时 status=unverified；`complete` 只认非 synthetic verified Fact。

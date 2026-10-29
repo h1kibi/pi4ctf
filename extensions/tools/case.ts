@@ -68,7 +68,7 @@ export const artifactIngestTool = defineTool({
   name: "artifact_ingest",
   label: "CTF artifact ingest",
   description:
-    "Copy an external evidence file (webhook capture, downloaded response, /tmp log) into .ctf/artifacts and create a synthetic outcome/observation, so claim quotes and flag provenance can use it. Sources must be under workspace/, the OS temp dir, or PI4CTF_INGEST_ROOTS; the case oracle and .ctf/ are refused. synthetic=true marks dry-run evidence.",
+    "Copy an external evidence file (webhook capture, downloaded response, /tmp log) into .ctf/artifacts and create a synthetic outcome/observation, so claim quotes and flag provenance can use it. The case oracle and .ctf/ are refused. synthetic=true marks dry-run evidence.",
   parameters: Type.Object({
     path: Type.String({ description: "File path, absolute or relative to the project root" }),
     name: Type.Optional(Type.String({ description: "Artifact stem; defaults to a generated name" })),
