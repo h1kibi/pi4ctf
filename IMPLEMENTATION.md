@@ -4,9 +4,9 @@
 > 行为冻结后按基线移植 Rust `rt`（docs/kernel-design.md）。
 > 本版已按第一轮外部评审（C1–C6 / R1–R10）修复，全部测试通过。
 >
-> **最终验证（2026-10-29）**：`npm test` 在 Windows / Node 22.20.0 通过（4 个 PTY 测试
-> 需要 POSIX 宿主，自动跳过）；GitHub Actions（ubuntu-latest 与 windows-latest / Node 22）
-> 全部通过、0 skipped；
+> **最终验证（2026-10-29）**：`npm test` 在 Windows / Node 22.20.0 通过，跳过 4 个需要
+> POSIX 宿主的 PTY 测试；GitHub Actions 两个平台全部通过——ubuntu-latest 为 0 skipped，
+> windows-latest 跳过 4 个 PTY 与 5 个需要 gcc 生成 ELF fixture 的 preflight 测试；
 > `toolbox-digest.sh` 输出合法 JSON（构建期断言 ≤512B）；
 > 验证环境 Docker 可用并存在一个 pwn 镜像；Kali sandbox 全量镜像未构建，
 > R6 的镜像 gate 仍需在有 Docker 的机器上完成。
