@@ -1,6 +1,8 @@
 /** Preflight metadata and backend reconfiguration regressions. */
 import * as assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { test } from 'node:test';
 import { dispatch } from '../adapter/protocol.js';
@@ -8,9 +10,46 @@ import { compilePacket } from '../kernel/context/packet.js';
 import { Ledger } from '../kernel/ledger/store.js';
 import { makeProject } from './helpers.js';
 
-const FIXTURES = path.resolve('challenges', 'ctftiny-babyboi');
+const LOCAL_FIXTURES = path.resolve('challenges', 'ctftiny-babyboi');
 
-test('preflight writes ELF/libc metadata and packet digest', async () => {
+/** Preflight fixtures are CTFTiny challenge data (GPL, and large), so they are
+ *  not committed. Use the local copy when present; otherwise build an
+ *  equivalent ELF on an ELF host. Windows cannot produce ELF with gcc. */
+function syntheticFixtures(): string | null {
+  if (process.platform === 'win32') return null;
+  const dir = path.join(os.tmpdir(), 'pi4ctf-preflight-fixtures');
+  const binary = path.join(dir, 'baby_boi');
+  if (fs.existsSync(binary)) return dir;
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    const src = path.join(dir, 'fixture.c');
+    fs.writeFileSync(src, '#include <stdio.h>\nint main(void) { puts("fixture"); return 0; }\n');
+    execFileSync('gcc', [
+      '-no-pie', '-fno-stack-protector',
+      '-Wl,-z,relro', '-Wl,-z,lazy', '-Wl,--build-id=sha1',
+      '-o', binary, src,
+    ], { stdio: 'ignore' });
+    fs.writeFileSync(
+      path.join(dir, 'libc-2.27.so'),
+      Buffer.concat([
+        fs.readFileSync(binary),
+        Buffer.from('\nGNU C Library (Ubuntu GLIBC 2.27-3ubuntu1) stable release version 2.27.\n'),
+      ]),
+    );
+    return dir;
+  } catch {
+    return null;
+  }
+}
+
+const FIXTURES = (fs.existsSync(path.join(LOCAL_FIXTURES, 'baby_boi'))
+  ? LOCAL_FIXTURES
+  : syntheticFixtures()) ?? path.join(os.tmpdir(), 'pi4ctf-preflight-fixtures-missing');
+const SKIP = FIXTURES.endsWith('-missing')
+  ? 'preflight fixtures unavailable: no local challenge data and no gcc'
+  : false;
+
+test('preflight writes ELF/libc metadata and packet digest', { skip: SKIP }, async () => {
   const tp = makeProject({ backend: 'host' });
   try {
     fs.copyFileSync(path.join(FIXTURES, 'baby_boi'), path.join(tp.root, 'baby_boi'));
@@ -67,7 +106,7 @@ test('case.configure moves backend host -> docker and pins image', async () => {
 });
 
 
-test('preflight skips core dumps, archives, workspace and .ctfignore entries', async () => {
+test('preflight skips core dumps, archives, workspace and .ctfignore entries', { skip: SKIP }, async () => {
   const tp = makeProject({ backend: 'host' });
   try {
     const src = path.join(FIXTURES, 'baby_boi');
@@ -91,7 +130,7 @@ test('preflight skips core dumps, archives, workspace and .ctfignore entries', a
   }
 });
 
-test('preflight records the project endpoint in chal.json and packet', async () => {
+test('preflight records the project endpoint in chal.json and packet', { skip: SKIP }, async () => {
   const tp = makeProject({ backend: 'host', target: { host: '127.0.0.1', port: 4444, instanceId: 'inst-1' } });
   try {
     fs.copyFileSync(path.join(FIXTURES, 'baby_boi'), path.join(tp.root, 'baby_boi'));
@@ -106,7 +145,7 @@ test('preflight records the project endpoint in chal.json and packet', async () 
 });
 
 
-test('packet marks a preflight endpoint stale after target switch', async () => {
+test('packet marks a preflight endpoint stale after target switch', { skip: SKIP }, async () => {
   const tp = makeProject({ backend: 'host', target: { host: '127.0.0.1', port: 4444 } });
   try {
     fs.copyFileSync(path.join(FIXTURES, 'baby_boi'), path.join(tp.root, 'baby_boi'));
@@ -126,7 +165,7 @@ test('packet marks a preflight endpoint stale after target switch', async () => 
 });
 
 
-test('preflight keeps late root attachments and ignores workspace by default', async () => {
+test('preflight keeps late root attachments and ignores workspace by default', { skip: SKIP }, async () => {
   const tp = makeProject({ backend: 'host' });
   try {
     const src = path.join(FIXTURES, 'baby_boi');
