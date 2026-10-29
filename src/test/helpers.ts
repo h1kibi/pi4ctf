@@ -50,8 +50,9 @@ export function makeProject(opts?: {
     oraclePath,
     flag,
     cleanup: () => {
-      fs.rmSync(root, { recursive: true, force: true });
-      fs.rmSync(oraclePath, { force: true });
+      // Windows may still hold a directory handle briefly after a child exits.
+      fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+      fs.rmSync(oraclePath, { force: true, maxRetries: 10, retryDelay: 50 });
     },
   };
 }
