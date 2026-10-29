@@ -2,9 +2,10 @@
  * Session: persistent interactive process (docs/design.md §5.5).
  *
  * STATUS: pipe by default; an opt-in POSIX PTY (`tty: true`) wraps the command
- * in script(1) with echo disabled, so the child sees a terminal without its
- * input being duplicated. Windows has no PTY path (pipe-only). Resize is
- * recorded but still not forwarded. pwn/rev 题在 pipe 模式下不算完成（review R3）。
+ * in a small python3 helper that allocates the PTY and disables echo before
+ * exec, so the child sees a terminal without its input being duplicated.
+ * Windows has no PTY path (pipe-only). Resize is recorded but still not
+ * forwarded. pwn/rev 题在 pipe 模式下不算完成（review R3）。
  *
  * Hardened per review C3/C4/C5/R5/R9/R10:
  *   - spawn errors surface as NOT_FOUND instead of crashing the server;
@@ -27,10 +28,58 @@ const MAX_SESSIONS = 4;
 const READ_CHUNK = 64 * 1024;
 const READ_QUIET_MS = 150;
 
-/** Single-quote an argument for script(1)'s internal `sh -c` string. */
-function posixQuote(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`;
-}
+/** Allocate the PTY and disable echo before the child can receive input.
+ *  script(1) sets terminal modes only after exec, so early input can echo. */
+const PTY_WRAP = [
+  'import fcntl,os,pty,select,signal,sys,termios',
+  'm,s=pty.openpty()',
+  'a=termios.tcgetattr(s)',
+  'a[3]&=~termios.ECHO',
+  'termios.tcsetattr(s,termios.TCSANOW,a)',
+  'def bye(*_):',
+  '    raise SystemExit(0)',
+  'signal.signal(signal.SIGTERM,bye)',
+  'signal.signal(signal.SIGINT,bye)',
+  'pid=os.fork()',
+  'if pid==0:',
+  '    os.setsid()',
+  '    fcntl.ioctl(s,termios.TIOCSCTTY,0)',
+  '    os.dup2(s,0)',
+  '    os.dup2(s,1)',
+  '    os.dup2(s,2)',
+  '    os.close(m)',
+  '    os.execvp(sys.argv[1],sys.argv[1:])',
+  'os.close(s)',
+  'def put(fd,data):',
+  '    while data:',
+  '        n=os.write(fd,data)',
+  '        data=data[n:]',
+  'try:',
+  '    while True:',
+  '        r,_,_=select.select([0,m],[],[])',
+  '        if 0 in r:',
+  '            d=os.read(0,65536)',
+  '            if not d:',
+  '                break',
+  '            put(m,d)',
+  '        if m in r:',
+  '            try:',
+  '                d=os.read(m,65536)',
+  '            except OSError:',
+  '                break',
+  '            if not d:',
+  '                break',
+  '            put(1,d)',
+  'finally:',
+  '    try:',
+  '        os.killpg(pid,signal.SIGTERM)',
+  '    except OSError:',
+  '        pass',
+  '    try:',
+  '        os.waitpid(pid,0)',
+  '    except OSError:',
+  '        pass',
+].join('\n');
 
 interface SessionState {
   id: string;
@@ -43,7 +92,7 @@ interface SessionState {
   pid?: number;
   /** Docker container name (docker backend); used by proc reads. */
   container?: string;
-  /** True when the program runs under a pseudo-terminal (script(1)). */
+  /** True when the program runs under a pseudo-terminal wrapper. */
   tty?: boolean;
 }
 
@@ -114,20 +163,15 @@ export class SessionManager {
           'tty sessions require a POSIX host; use a scripted approach (pwntools stdin=PTY) or a Docker image with a PTY helper',
         );
       }
-      if (!commandExists('script')) {
-        throw new KernelError('UNSUPPORTED', 'tty sessions require script(1) from util-linux');
+      if (!commandExists('python3')) {
+        throw new KernelError('UNSUPPORTED', 'tty sessions require python3 on the host to allocate the pseudo-terminal');
       }
-      // Give the child a real terminal. Keep canonical mode (shell `read`,
-      // gdb and nc still work) but disable echo so typed input is not
-      // duplicated into the artifact. Programs that need raw mode set it
+      // Allocate the PTY and clear ECHO before exec; canonical mode is kept so
+      // shell `read`, gdb and nc still work. Programs that need raw mode set it
       // themselves. Resize is still not forwarded.
       const wrapped = [command, ...commandArgs];
-      command = 'script';
-      commandArgs = [
-        '-q', '-e', '-f',
-        '-c', `stty -echo 2>/dev/null; exec ${wrapped.map(posixQuote).join(' ')}`,
-        '/dev/null',
-      ];
+      command = 'python3';
+      commandArgs = ['-c', PTY_WRAP, ...wrapped];
     }
     const artifact = `artifacts/session-${id}.log`;
     const child = spawn(command, commandArgs, {

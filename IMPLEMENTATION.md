@@ -172,7 +172,7 @@ ROPgadget 7.7, checksec, patchelf, socat, nc, python3
 
 1. **session 默认管道，POSIX 可选 PTY**：契约（open/write/read 增量/resize/close、
    artifact、上限 4、EOF 清理）不变；`session open tty:true` 在 POSIX 宿主上用
-   `script(1)` 分配伪终端并关闭 echo，覆盖 `isatty` 与 `/dev/tty`。Windows 仍是
+   `python3` 分配伪终端并在 exec 前关闭 echo，覆盖 `isatty` 与 `/dev/tty`。Windows 仍是
    pipe-only；`resize` 只记录不转发；tty 主机会话的 `proc` 读取不可用。
 2. **异族 verifier 未接**：谓词 `check:"verifier"` 路径降级 `interpreted` 不产 Fact。
    Fact 已记录 `verifiedBy`（`predicate` / `verifier`）和可选的 `verifier.model` /

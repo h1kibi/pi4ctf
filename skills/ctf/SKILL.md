@@ -231,7 +231,7 @@ Loopback targets are always allowed even when `allowedHosts` lists only a remote
 - Do not rely on `/tmp` being shared between pi's bash tool and `run`; use a path under the challenge workspace.
 - Platform-specific ports/paths are not assumed; use `env_memory` for tool locations and inspect the actual backend when a bind fails.
 - For complex scripts, write the script with `write` and invoke the file with `run`; avoid deep quoting in `command`/`-c` strings.
-- If a program checks `isatty` or reads `/dev/tty`, open the session with `tty:true` on a POSIX host (script(1), echo off). Windows hosts have no PTY: use a pwntools script with `stdin=PTY` instead. `resize` is recorded but not forwarded.
+- If a program checks `isatty` or reads `/dev/tty`, open the session with `tty:true` on a POSIX host (python3 pty helper, echo off). Windows hosts have no PTY: use a pwntools script with `stdin=PTY` instead. `resize` is recorded but not forwarded.
 - For direct kernel CLI calls, pass JSON with `rt --op ... --input-file payload.json` (or `--input-file -`) instead of shell-quoting a JSON argument.
 
 ## Safety

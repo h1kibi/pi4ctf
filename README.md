@@ -159,7 +159,7 @@ helper（14）：`ctf_init`（显式初始化，Java/归档题 fallback）、`en
 `case_close`、`case_clear_negatives`、`deepseek_search`、`deepseek_fetch`、`deepseek_vision`。
 `/ctf doctor`（host 工具 digest）是命令，不是模型工具；`case` 的 init/status/context/handoff/doctor 核心 API 仍由 adapter/kernel 调用。
 
-`session open tty:true`（仅 POSIX 宿主）用 `script(1)` 分配伪终端并关闭 echo：
+`session open tty:true`（仅 POSIX 宿主）用 python3 分配伪终端并在 exec 前关闭 echo：
 `isatty`、`/dev/tty`、行缓冲可用，输入不会被回显复制。`resize` 仍只记录不转发；
 Windows 宿主没有 PTY，改用 pwntools `stdin=PTY` 的脚本或容器内 helper。tty 会话的
 `proc` 主机读取不可用（wrapper pid 不等于目标 pid），Docker 会话仍可读容器 PID 1。

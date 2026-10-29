@@ -5,8 +5,8 @@ import { SessionManager } from '../kernel/session/session.js';
 import { commandExists } from '../kernel/sysutil.js';
 import { makeProject } from './helpers.js';
 
-const SKIP = process.platform === 'win32' || !commandExists('script')
-  ? 'tty sessions require a POSIX host with script(1)'
+const SKIP = process.platform === 'win32' || !commandExists('python3')
+  ? 'tty sessions require a POSIX host with python3'
   : false;
 
 async function readUntil(mgr: SessionManager, id: string, needle: string, timeoutMs = 5000): Promise<string> {
