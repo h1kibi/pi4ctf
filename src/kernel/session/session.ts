@@ -1,9 +1,10 @@
 /**
  * Session: persistent interactive process (docs/design.md §5.5).
  *
- * STATUS: pipe-only walking skeleton — true PTY (ConPTY/Unix PTY) is a W2/Rust
- * deliverable; resize is recorded but is a no-op on pipes. pwn/rev 题在 pipe
- * 模式下不算完成（review R3）。
+ * STATUS: pipe by default; an opt-in POSIX PTY (`tty: true`) wraps the command
+ * in script(1) with echo disabled, so the child sees a terminal without its
+ * input being duplicated. Windows has no PTY path (pipe-only). Resize is
+ * recorded but still not forwarded. pwn/rev 题在 pipe 模式下不算完成（review R3）。
  *
  * Hardened per review C3/C4/C5/R5/R9/R10:
  *   - spawn errors surface as NOT_FOUND instead of crashing the server;
@@ -26,6 +27,11 @@ const MAX_SESSIONS = 4;
 const READ_CHUNK = 64 * 1024;
 const READ_QUIET_MS = 150;
 
+/** Single-quote an argument for script(1)'s internal `sh -c` string. */
+function posixQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
 interface SessionState {
   id: string;
   argv: string[];
@@ -37,6 +43,8 @@ interface SessionState {
   pid?: number;
   /** Docker container name (docker backend); used by proc reads. */
   container?: string;
+  /** True when the program runs under a pseudo-terminal (script(1)). */
+  tty?: boolean;
 }
 
 interface LiveSession {
@@ -62,7 +70,7 @@ export class SessionManager {
 
   constructor(private readonly project: Project) {}
 
-  open(input: { argv: string[]; cwd?: string }): SessionState {
+  open(input: { argv: string[]; cwd?: string; tty?: boolean }): SessionState {
     if (this.live.size >= MAX_SESSIONS) {
       throw new KernelError('LIMIT', `max ${MAX_SESSIONS} sessions`);
     }
@@ -85,7 +93,7 @@ export class SessionManager {
       command = 'docker';
       container = `pi4ctf-${id}-${sha256(this.project.root).slice(0, 8)}`;
       commandArgs = [
-        'run', '--rm', '-i', '--name', container, '--network', 'bridge', '--cap-add', 'SYS_PTRACE',
+        'run', '--rm', '-i', ...(input.tty ? ['-t'] : []), '--name', container, '--network', 'bridge', '--cap-add', 'SYS_PTRACE',
         '-e', 'TERM=xterm', '-e', 'PYTHONUNBUFFERED=1',
         '-v', `${this.project.root}:/challenge:ro`,
         '-v', `${workspace}:/challenge/workspace:rw`,
@@ -97,6 +105,29 @@ export class SessionManager {
     } else if (!commandExists(program)) {
       // Fail fast on unknown host binaries (review C3).
       throw new KernelError('NOT_FOUND', `session program not found: ${program}`);
+    }
+    const wantsTty = input.tty === true;
+    if (wantsTty) {
+      if (process.platform === 'win32') {
+        throw new KernelError(
+          'UNSUPPORTED',
+          'tty sessions require a POSIX host; use a scripted approach (pwntools stdin=PTY) or a Docker image with a PTY helper',
+        );
+      }
+      if (!commandExists('script')) {
+        throw new KernelError('UNSUPPORTED', 'tty sessions require script(1) from util-linux');
+      }
+      // Give the child a real terminal. Keep canonical mode (shell `read`,
+      // gdb and nc still work) but disable echo so typed input is not
+      // duplicated into the artifact. Programs that need raw mode set it
+      // themselves. Resize is still not forwarded.
+      const wrapped = [command, ...commandArgs];
+      command = 'script';
+      commandArgs = [
+        '-q', '-e', '-f',
+        '-c', `stty -echo 2>/dev/null; exec ${wrapped.map(posixQuote).join(' ')}`,
+        '/dev/null',
+      ];
     }
     const artifact = `artifacts/session-${id}.log`;
     const child = spawn(command, commandArgs, {
@@ -112,8 +143,9 @@ export class SessionManager {
       seq: 0,
       closed: false,
       artifact,
-      pid: !container && child.pid ? child.pid : undefined,
+      pid: !container && !wantsTty && child.pid ? child.pid : undefined,
       container,
+      ...(wantsTty ? { tty: true } : {}),
     };
     const session: LiveSession = {
       state,
@@ -150,7 +182,7 @@ export class SessionManager {
     });
     this.live.set(id, session);
     this.persistState(state);
-    this.project.appendEvent('session.open', 'model', { id, argv: input.argv });
+    this.project.appendEvent('session.open', 'model', { id, argv: input.argv, tty: wantsTty });
     return state;
   }
 

@@ -113,7 +113,7 @@ async function handleSessionLine(
       byRoot.set(project.root, mgr);
     }
     assertCaseBudget(project);
-    const state = mgr.open({ argv });
+    const state = mgr.open({ argv, tty: msg.tty === true });
     // A session is one long-running command; its I/O is not charged per
     // keystroke. Counting the open prevents a post-budget session bypass.
     project.allocId('command');

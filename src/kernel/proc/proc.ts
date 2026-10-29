@@ -46,6 +46,7 @@ interface SessionStateFile {
   pid?: number;
   container?: string;
   closed?: boolean;
+  tty?: boolean;
 }
 
 function readState(project: Project, session: string): SessionStateFile {
@@ -93,6 +94,9 @@ function hexDump(buf: Buffer, base: number): string {
 function hostRead(state: SessionStateFile, action: ProcAction, address: number, length: number): { buf: Buffer; raw?: Buffer; text: string } {
   if (process.platform !== 'linux') {
     throw new KernelError('UNSUPPORTED', 'proc reads require Linux host sessions (or a docker session)');
+  }
+  if (state.tty) {
+    throw new KernelError('UNSUPPORTED', 'tty sessions run under script(1); proc cannot address the wrapped program pid');
   }
   if (!state.pid || state.closed) throw new KernelError('CONFLICT', `session ${state.id} is not live`);
   if (action === 'maps' || action === 'libs') {

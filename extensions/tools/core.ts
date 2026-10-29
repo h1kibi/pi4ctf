@@ -164,6 +164,7 @@ export const sessionTool = defineTool({
   promptSnippet: "Drive a persistent interactive CTF session",
   promptGuidelines: [
     "Use session for interactive programs; run/read the returned increments.",
+    "If a program checks isatty or reads /dev/tty, reopen with tty=true on a POSIX host. Windows hosts must script it instead (pwntools stdin=PTY or a Docker image with a PTY helper).",
     "Close sessions when done; the kernel enforces a per-project cap.",
   ],
   parameters: Type.Object({
@@ -177,6 +178,7 @@ export const sessionTool = defineTool({
     argv: Type.Optional(Type.Array(Type.String())),
     data: Type.Optional(Type.String()),
     id: Type.Optional(Type.String()),
+    tty: Type.Optional(Type.Boolean({ description: "Allocate a POSIX pseudo-terminal (script(1), raw mode) for programs that check isatty or read /dev/tty. POSIX hosts only; resize stays a no-op." })),
     timeoutMs: Type.Optional(Type.Number()),
     cols: Type.Optional(Type.Number()),
     rows: Type.Optional(Type.Number()),
@@ -189,7 +191,7 @@ export const sessionTool = defineTool({
       if (params.op === "open") {
         const root = rootFor(ctx, params.root);
         if (!params.argv || params.argv.length === 0) throw new Error("session open requires argv");
-        const res = await sessions.request("open", { root, argv: params.argv });
+        const res = await sessions.request("open", { root, argv: params.argv, ...(params.tty ? { tty: true } : {}) });
         return sessionResult(res, "session.open");
       }
       if (!params.id) throw new Error(`session ${params.op} requires id`);

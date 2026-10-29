@@ -132,7 +132,7 @@ pi mcp list --json   # 机器可读状态
 
 安装方式：`pi install <pi4ctf-package>`；安装后 `pi list` 应显示该 package。
 Pwn 使用显式 `dockerImage`（`run`/`session` 都在容器内）；
-当前限制：session 仍是 pipe-only（真 PTY 随 Rust），Kali 全量镜像尚未实机构建。
+当前限制：session 默认 pipe-only；POSIX 宿主可 `session open tty:true` 获得 PTY，Windows 无 PTY 路径；Kali 全量镜像尚未实机构建。
 
 ## 形态
 
@@ -150,7 +150,7 @@ Pwn 使用显式 `dockerImage`（`run`/`session` 都在容器内）；
 | 动词 | 作用 |
 |---|---|
 | `run` | 执行命令；返回 ProcessOutcome；自动产出 Observation |
-| `session` | 持久 PTY；gdb/nc/python；只回增量 |
+| `session` | 持久进程；POSIX 可选伪终端（`tty:true`）；只回增量 |
 | `claim` | 提交解释/断言 + quote；内核自动验证为 Fact/Negative |
 | `flag` | 提交 flag 候选；内核四层验证 |
 
@@ -158,6 +158,11 @@ helper（14）：`ctf_init`（显式初始化，Java/归档题 fallback）、`en
 `case_evidence`（artifact 检索）、`case_configure`（flagFormat/oracle/backend/target）、`case_plan`、`case_restart`、
 `case_close`、`case_clear_negatives`、`deepseek_search`、`deepseek_fetch`、`deepseek_vision`。
 `/ctf doctor`（host 工具 digest）是命令，不是模型工具；`case` 的 init/status/context/handoff/doctor 核心 API 仍由 adapter/kernel 调用。
+
+`session open tty:true`（仅 POSIX 宿主）用 `script(1)` 分配伪终端并关闭 echo：
+`isatty`、`/dev/tty`、行缓冲可用，输入不会被回显复制。`resize` 仍只记录不转发；
+Windows 宿主没有 PTY，改用 pwntools `stdin=PTY` 的脚本或容器内 helper。tty 会话的
+`proc` 主机读取不可用（wrapper pid 不等于目标 pid），Docker 会话仍可读容器 PID 1。
 
 其余全部用 pi 内置：`bash/read/write/grep/find/edit`。
 

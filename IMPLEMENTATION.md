@@ -170,9 +170,10 @@ ROPgadget 7.7, checksec, patchelf, socat, nc, python3
 
 ## 与基线的偏差（TS skeleton 已知限制）
 
-1. **session 是管道不是 PTY**（W1 不算完成）：契约（open/write/read 增量/resize/close、
-   artifact、上限 4、EOF 清理）不变且经 rt 子进程 E2E 验证，但 pwn/rev 交互题需要真
-   ConPTY/Unix PTY——随 Rust 移植交付。resize 目前记录但为 no-op。
+1. **session 默认管道，POSIX 可选 PTY**：契约（open/write/read 增量/resize/close、
+   artifact、上限 4、EOF 清理）不变；`session open tty:true` 在 POSIX 宿主上用
+   `script(1)` 分配伪终端并关闭 echo，覆盖 `isatty` 与 `/dev/tty`。Windows 仍是
+   pipe-only；`resize` 只记录不转发；tty 主机会话的 `proc` 读取不可用。
 2. **异族 verifier 未接**：谓词 `check:"verifier"` 路径降级 `interpreted` 不产 Fact。
    Fact 已记录 `verifiedBy`（`predicate` / `verifier`）和可选的 `verifier.model` /
    `promptVersion`，接入时必须带这套元数据；当前所有 Fact 都是 `predicate`。
