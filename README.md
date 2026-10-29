@@ -22,6 +22,9 @@ pi 适配、题型工具、MCP、浏览器/逆向环境都在内核之外，通�
 
 ## 安装到 pi
 
+要求 **pi >= 1.4.0**（`package.json` 的 `peerDependencies` 声明 `^1.4.0`）。扩展类型对着 pi 1.4 的
+`.d.ts` 编译，`npm test` 会同时检查 kernel 与 extension；在旧版 pi 上不保证可用。
+
 ```bash
 npm install
 npm run build

@@ -4,10 +4,18 @@
   "description": "pi4ctf TS kernel: 4 verbs / 5 mechanisms / 4 records (walking skeleton per docs/design.md)",
   "type": "module",
   "private": true,
-  "keywords": ["pi-package", "ctf", "security"],
+  "keywords": [
+    "pi-package",
+    "ctf",
+    "security"
+  ],
   "pi": {
-    "extensions": ["./extensions/ctf.ts"],
-    "skills": ["./skills/ctf"]
+    "extensions": [
+      "./extensions/ctf.ts"
+    ],
+    "skills": [
+      "./skills/ctf"
+    ]
   },
   "engines": {
     "node": ">=22"
@@ -30,11 +38,12 @@
     "rt": "node dist/rt.js"
   },
   "peerDependencies": {
-    "@earendil-works/pi-ai": "*",
-    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-ai": "^1.4.0",
+    "@earendil-works/pi-coding-agent": "^1.4.0",
     "typebox": "*"
   },
   "devDependencies": {
+    "@earendil-works/pi-coding-agent": "1.4.0",
     "@types/node": "^22.0.0",
     "typescript": "^5.6.0"
   }
