@@ -91,6 +91,12 @@ test('unpinned oracle rejection is retryable after configure', async () => {
     const first = submitFlag(project, new Ledger(project), { value: flag, evidenceRefs: [factId] });
     assert.equal(first.status, 'unverified');
     assert.match(first.detail.oracle ?? '', /not pinned/);
+    const res = await dispatch({ op: 'flag', root, input: { value: flag, evidenceRefs: [factId] } });
+    assert.equal(res.ok, true, JSON.stringify(res));
+    assert.equal(res.ok ? res.data.status : '', 'unverified');
+    assert.equal(res.ok ? res.data.verified : null, false);
+    assert.equal(res.ok ? res.data.layersPassed : 0, 4);
+    assert.match(String(res.ok ? res.data.statusDetail : ''), /evidence complete; oracle unavailable/);
     fs.writeFileSync(oracle, JSON.stringify({ flag }));
     const cfg = project.reconfigure({ oracleRef: path.relative(root, oracle) });
     assert.ok(cfg.oracleHash);
@@ -305,6 +311,25 @@ test('flags.jsonl records every attempt with layer detail', async () => {
   }
 });
 
+
+test('flag reports the last flagFormat change', async () => {
+  const { tp, factId } = await solvedProject();
+  try {
+    tp.project.reconfigure({ flagFormat: 'flag\\{[^}]+\\}' });
+    const res = await dispatch({
+      op: 'flag',
+      root: tp.root,
+      input: { value: tp.flag, evidenceRefs: [factId] },
+    });
+    assert.equal(res.ok, true, JSON.stringify(res));
+    assert.equal(typeof (res.ok ? res.data.formatConfiguredAt : null), 'number');
+    assert.equal(res.ok ? res.data.formatConfiguredBy : '', 'adapter');
+    assert.equal(res.ok ? res.data.verified : false, true);
+    assert.equal(res.ok ? res.data.layersPassed : 0, 5);
+  } finally {
+    tp.cleanup();
+  }
+});
 
 test('docker flag validation warns instead of rejecting a host-side unreachable target', async () => {
   const { tp, factId } = await solvedProject({ target: { host: '127.0.0.1', port: 1 }, allowedHosts: ['127.0.0.1'] });

@@ -215,6 +215,33 @@ export class Project {
     return max;
   }
 
+  /** Last successful flagFormat change, for audit in the flag response. */
+  lastFormatChange(): { ts: number; actor: string; flagFormat: string } | null {
+    const events = path.join(this.ctfDir, 'events.jsonl');
+    if (!fs.existsSync(events)) return null;
+    let last: { ts: number; actor: string; flagFormat: string } | null = null;
+    for (const line of fs.readFileSync(events, 'utf8').split('\n')) {
+      if (!line.trim()) continue;
+      try {
+        const event = JSON.parse(line) as {
+          ts?: unknown;
+          actor?: unknown;
+          type?: unknown;
+          payload?: { flagFormat?: unknown };
+        };
+        if (event.type !== 'project.reconfigure' || typeof event.ts !== 'number' || typeof event.payload?.flagFormat !== 'string') continue;
+        last = {
+          ts: event.ts,
+          actor: typeof event.actor === 'string' ? event.actor : 'adapter',
+          flagFormat: event.payload.flagFormat,
+        };
+      } catch {
+        // Audit is best effort; a truncated event line must not block flag validation.
+      }
+    }
+    return last;
+  }
+
   appendEvent(type: string, actor: string, payload: Record<string, unknown>): EventRecord {
     return this.lock.withLock(() => {
       const filePath = path.join(this.ctfDir, 'project.json');

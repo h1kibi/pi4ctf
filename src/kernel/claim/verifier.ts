@@ -125,7 +125,11 @@ export class ClaimVerifier {
     const shapedCache = new Map<string, string>();
     const quotes = input.quotes.map((q) => {
       if (!allowedShaped.has(q.shapedRef)) {
-        throw new KernelError('INVALID_REQUEST', `quote artifact ${q.shapedRef} is not owned by cited refs`);
+        const allowed = [...allowedShaped].sort();
+        throw new KernelError(
+          'INVALID_REQUEST',
+          `quote artifact ${q.shapedRef} is not owned by cited refs; allowed: ${allowed.slice(0, 6).join(', ')}${allowed.length > 6 ? ', ...' : ''}`,
+        );
       }
       let shaped = shapedCache.get(q.shapedRef);
       if (shaped === undefined) {

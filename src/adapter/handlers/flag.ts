@@ -30,26 +30,43 @@ export async function handleFlag(req: Request, op: string, input: Record<string,
     sourceRef: input.sourceRef ? String(input.sourceRef) : null,
     evidenceRefs: Array.isArray(input.evidenceRefs) ? (input.evidenceRefs as unknown[]).map(String) : [],
   });
+  const formatChange = project.lastFormatChange();
+  const formatAudit = formatChange
+    ? { formatConfiguredAt: formatChange.ts, formatConfiguredBy: formatChange.actor }
+    : {};
+  const layersPassed = Object.values(verdict.layers).filter(Boolean).length;
   if (verdict.status === 'rejected') {
     return {
       ok: false,
       error: {
         code: 'FLAG_REJECTED',
         message: `flag rejected: ${failedLayers(verdict.layers, verdict.detail)}`,
-        details: { layers: verdict.layers, detail: verdict.detail },
+        details: { layers: verdict.layers, layersPassed, detail: verdict.detail, ...formatAudit },
       },
     };
   }
   if (verdict.status === 'unverified') {
     return ok(op, {
       status: 'unverified',
+      verified: false,
+      layersPassed,
+      statusDetail: layersPassed === 4 ? 'evidence complete; oracle unavailable' : 'evidence incomplete',
       layers: verdict.layers,
       detail: verdict.detail,
       oracle: 'unavailable',
       flagTxt: null,
       warnings,
+      ...formatAudit,
     });
   }
-  return ok(op, { status: 'accepted', layers: verdict.layers, flagTxt: '.ctf/flag.txt', warnings });
+  return ok(op, {
+    status: 'accepted',
+    verified: true,
+    layersPassed,
+    layers: verdict.layers,
+    flagTxt: '.ctf/flag.txt',
+    warnings,
+    ...formatAudit,
+  });
 }
 

@@ -146,3 +146,23 @@ test('observed claim over failing outcome is rejected', async () => {
     tp.cleanup();
   }
 });
+
+test('quote with an unowned shapedRef lists the refs allowed by the cited outcome', async () => {
+  const tp = makeProject();
+  try {
+    const run = await runExec(tp.project, { argv: [NODE, '-e', 'console.log("needle")'] });
+    const verifier = new ClaimVerifier(tp.project, new Ledger(tp.project));
+    assert.throws(
+      () =>
+        verifier.submit({
+          claimType: 'interpreted',
+          text: 'needle',
+          quotes: [{ shapedRef: `${run.outcome.id}.stdout.shaped.log`, text: 'needle' }],
+          refs: [run.outcome.id],
+        }),
+      new RegExp(`allowed: .*artifacts/${run.outcome.id}\\.stdout\\.shaped\\.log`),
+    );
+  } finally {
+    tp.cleanup();
+  }
+});

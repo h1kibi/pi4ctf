@@ -74,7 +74,7 @@ Each parsed field carries:
   "signature": "...",
   "attempts": 3,
   "lastAttemptAt": "2026-10-24T12:20:00+08:00",
-  "failureClass": "timeout|nonzero-exit|no-output|schema-mismatch|probe-contradicted|server-error|client-blocked",
+  "failureClass": "timeout|nonzero-exit|no-output|schema-mismatch|probe-contradicted|server-error|client-blocked|command-not-found",
   "transient": true,
   "condemnedBy": "p-http-status@1.0.0",
   "unblockOn": "ttl|env_change|probe|probe_version",

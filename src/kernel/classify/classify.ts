@@ -298,6 +298,21 @@ export function classify(outcome: ProcessOutcome, shapedStdout: string, shapedSt
     }
   }
 
+  // A typo or a missing script is a local execution mistake, not evidence
+  // that the exploit route is wrong. Keep it out of the route dead ends.
+  if (!semanticFailure && (outcome.processFailure !== null || (outcome.exit ?? 0) !== 0)) {
+    const commandText = `${shapedStderr}\n${shapedStdout}`;
+    const commandMarker = [
+      /command not found/i,
+      /no such file or directory/i,
+      /not recognized as an internal or external command/i,
+    ].find((re) => re.test(commandText));
+    if (commandMarker) {
+      semanticFailure = 'command-not-found';
+      semanticDetail = `command-marker:${commandMarker.source}`;
+    }
+  }
+
   const obs: Observation = {
     outcomeId: outcome.id,
     commandClass,

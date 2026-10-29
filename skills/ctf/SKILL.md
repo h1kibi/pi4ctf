@@ -133,14 +133,15 @@ Reconcile claim -> Fact or Negative
 Re-anchor plan / budget / negative ledger
 ```
 
-Default to one probe per decision. Use a `probes` batch only for a matrix of related checks; prefer a probe that can falsify your current hypothesis.
+Default to one probe per decision. Use a `probes` batch only for a matrix of related checks; one batch consumes one run slot and each result is Fact-eligible. Prefer a probe that can falsify your current hypothesis.
 
 ## run rules
 
 - Prefer `argv` over `command`; `command` runs the platform shell (`bash -lc`), so quote for bash, not PowerShell.
+- On Windows hosts, write a script file and invoke it without `bash -lc`; `cwd` is relative to the project root and also becomes the process working directory, so paths in `argv` are relative to it.
 - Do not assume a tool path or shell feature; call `env_memory recall` first.
 - Respect `processFailure`: `timeout`, `nonzero-exit`, `no-output-when-expected`.
-- Respect `semanticFailure`: `target-unreachable`, `server-error`, `client-blocked`, `schema-mismatch`.
+- Respect `semanticFailure`: `target-unreachable`, `server-error`, `client-blocked`, `command-not-found`, `schema-mismatch`. `command-not-found` is a local typo/missing-script incident, not a route dead end.
 - Read the shaped artifact before making a claim; the raw artifact may be binary/large.
 - If output is truncated, read the artifact or run a narrower command.
 - Do not repeat a route that the negative ledger marks HARD.
@@ -151,7 +152,7 @@ A claim needs:
 
 - `claimType`: `observed`, `interpreted`, `differential`, or `time-based`;
 - `text`: one falsifiable sentence;
-- `quotes`: exact `{shapedRef, text}` or `{shapedRef, span:{start,end}, text}` from a shaped artifact; omit span to let the kernel locate a unique substring;
+- `quotes`: exact `{shapedRef, text}` or `{shapedRef, span:{start,end}, text}` from a shaped artifact; `shapedRef` is `.ctf`-relative, e.g. `artifacts/cmd-0001.stdout.shaped.log` (an outcome id like `cmd-0001` is not a shapedRef); omit span to let the kernel locate a unique substring;
 - `refs`: ProcessOutcome ids;
 - `probe`: purpose / expect / falsifier when relevant.
 
@@ -231,7 +232,7 @@ Loopback targets are always allowed even when `allowedHosts` lists only a remote
 - Proxy env is kept consistent across pi's bash tool and `run`/`session`: existing `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY` are inherited and `NO_PROXY` defaults to `localhost,127.0.0.1,::1` (merged with any inherited value). Set `PI4CTF_INHERIT_PROXY=0` to strip proxies explicitly.
 - Do not rely on `/tmp` being shared between pi's bash tool and `run`; use a path under the challenge workspace.
 - Platform-specific ports/paths are not assumed; use `env_memory` for tool locations and inspect the actual backend when a bind fails.
-- For complex scripts, write the script with `write` and invoke the file with `run`; avoid deep quoting in `command`/`-c` strings.
+- For complex scripts, write the script with `write` and invoke the file with `run`; avoid deep quoting in `command`/`-c` strings. On Windows hosts, avoid `bash -lc` long strings: write the script file and invoke it with `command: "bash ./script.sh"` or `argv` without `-c`. `cwd` is relative to the project root and becomes the process working directory, so relative paths in `argv` are resolved against it.
 - If a program checks `isatty` or reads `/dev/tty`, open the session with `tty:true` on a POSIX host (python3 pty helper, echo off). Windows hosts have no PTY: use a pwntools script with `stdin=PTY` instead. Resize applies to tty sessions (initial 80×24); pipe sessions only record it.
 - For direct kernel CLI calls, pass JSON with `rt --op ... --input-file payload.json` (or `--input-file -`) instead of shell-quoting a JSON argument.
 

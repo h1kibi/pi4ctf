@@ -149,7 +149,7 @@ Pwn 使用显式 `dockerImage`（`run`/`session` 都在容器内）；
 
 | 动词 | 作用 |
 |---|---|
-| `run` | 执行命令；返回 ProcessOutcome；自动产出 Observation |
+| `run` | 执行命令；返回 ProcessOutcome；自动产出 Observation；`probes` 批量最多 16 项，计 1 个 slot |
 | `session` | 持久进程；POSIX 可选伪终端（`tty:true`）；只回增量 |
 | `claim` | 提交解释/断言 + quote；内核自动验证为 Fact/Negative |
 | `flag` | 提交 flag 候选；内核四层验证 |
@@ -164,6 +164,8 @@ helper（14）：`ctf_init`（显式初始化，Java/归档题 fallback）、`en
 （初始 80×24，SIGWINCH 生效），管道会话仍只记录；
 Windows 宿主没有 PTY，改用 pwntools `stdin=PTY` 的脚本或容器内 helper。tty 会话的
 `proc` 主机读取不可用（wrapper pid 不等于目标 pid），Docker 会话仍可读容器 PID 1。
+Windows 宿主上避免用 `bash -lc` 拼长命令：把脚本写入项目再 `run`；`cwd` 同时是进程工作目录，`argv` 里的相对路径按它解析。
+缺少命令或脚本返回的 `command not found` / `No such file or directory` 归为环境事件，不写死 route。
 
 其余全部用 pi 内置：`bash/read/write/grep/find/edit`。
 

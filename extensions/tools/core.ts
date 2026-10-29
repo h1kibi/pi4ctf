@@ -70,7 +70,7 @@ export const runTool = defineTool({
   promptGuidelines: [
     "Use run for challenge commands; do not use bash for the same purpose.",
     "After run, use the returned artifact/shaped output as evidence; never assert a Fact from memory.",
-    "For a multi-probe matrix, pass probes (max 16); kernel executes/classifies each probe and items are Fact-eligible.",
+    "For 2-16 related URLs or commands, pass probes (max 16) instead of looping in bash; one batch consumes one run slot and each item is Fact-eligible.",
   ],
   parameters: Type.Object({
     argv: Type.Optional(Type.Array(Type.String({ description: "Executable and arguments" }))),

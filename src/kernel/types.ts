@@ -105,6 +105,7 @@ export type SemanticFailure =
   | 'client-blocked'
   | 'target-unreachable'
   | 'tty-required'
+  | 'command-not-found'
   | null;
 
 export interface ParsedField {
@@ -195,7 +196,8 @@ export type FailureClass =
   | 'probe-contradicted'
   | 'client-blocked'
   | 'server-error'
-  | 'tty-required';
+  | 'tty-required'
+  | 'command-not-found';
 
 export interface NegativeEntry {
   /** File id n0001; assigned by the ledger on first insert. */

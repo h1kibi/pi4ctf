@@ -287,3 +287,37 @@ test('plain nonzero exit still enters the approach family', async () => {
     tp.cleanup();
   }
 });
+
+test('command-not-found is an environment incident, not a route dead end', async () => {
+  const tp = makeProject();
+  try {
+    const res = await dispatch({
+      op: 'run',
+      root: tp.root,
+      input: { argv: ['bash', '-c', 'definitely-not-a-command'] },
+    });
+    assert.equal(res.ok, true, JSON.stringify(res));
+    assert.equal(res.ok ? res.data.semanticFailure : '', 'command-not-found');
+    const entry = new Ledger(tp.project).listNegatives().find((n) => n.failureClass === 'command-not-found');
+    assert.ok(entry, 'the missing command must be recorded');
+    assert.equal(entry?.family, 'environment');
+    assert.equal(entry?.transient, true);
+    assert.equal(new Ledger(tp.project).listNegatives().some((n) => n.failureClass === 'nonzero-exit'), false);
+  } finally {
+    tp.cleanup();
+  }
+});
+
+test('a repeated canonical command reports duplicateOf', async () => {
+  const tp = makeProject();
+  try {
+    const input = { argv: [NODE, '-e', 'console.log("same")'] };
+    const first = await dispatch({ op: 'run', root: tp.root, input });
+    const second = await dispatch({ op: 'run', root: tp.root, input });
+    assert.equal(first.ok, true, JSON.stringify(first));
+    assert.equal(second.ok, true, JSON.stringify(second));
+    assert.equal(second.ok ? second.data.duplicateOf : null, first.ok ? first.data.id : null);
+  } finally {
+    tp.cleanup();
+  }
+});

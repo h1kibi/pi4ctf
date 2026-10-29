@@ -46,6 +46,8 @@ export function negativeSpecFor(
       return { failureClass: 'client-blocked', family: 'environment', transient: true, unblockOn: 'ttl', ttlMs: TTL_CLIENT_BLOCKED_MS };
     case 'tty-required':
       return { failureClass: 'tty-required', family: 'environment', transient: true, unblockOn: 'ttl', ttlMs: TTL_TRANSIENT_MS };
+    case 'command-not-found':
+      return { failureClass: 'command-not-found', family: 'environment', transient: true, unblockOn: 'ttl', ttlMs: TTL_TRANSIENT_MS };
     case 'schema-mismatch':
       return { failureClass: 'schema-mismatch', family: 'approach', transient: false, unblockOn: 'env_change', ttlMs: null };
     case 'probe-contradicted':

@@ -216,7 +216,7 @@ classify(cmdClass, shaped) -> fields + semanticFailure
 {
   "signature": "...",
   "attempts": 3,
-  "failureClass": "timeout|nonzero-exit|no-output|schema-mismatch|probe-contradicted|client-blocked|server-error|tty-required",
+  "failureClass": "timeout|nonzero-exit|no-output|schema-mismatch|probe-contradicted|client-blocked|server-error|tty-required|command-not-found",
   "transient": true,
   "expiresAt": "2026-10-27T12:30:00+08:00",
   "artifactRef": "...",

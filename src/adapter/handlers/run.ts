@@ -152,8 +152,10 @@ export async function handleRun(req: Request, op: string, input: Record<string, 
           route: null,
         });
       }
+      const duplicateOf = ledger.listOutcomes().find((prior) => prior.id !== outcome.id && prior.canonicalKey === outcome.canonicalKey)?.id ?? null;
       return ok(op, {
         id: outcome.id,
+        duplicateOf,
         exit: outcome.exit,
         durationMs: outcome.durationMs,
         processFailure: outcome.processFailure,
