@@ -173,9 +173,9 @@ ROPgadget 7.7, checksec, patchelf, socat, nc, python3
 1. **session 默认管道，POSIX 可选 PTY**：契约（open/write/read 增量/resize/close、
    artifact、上限 4、EOF 清理）不变；`session open tty:true` 在 POSIX 宿主上用
    `python3` 分配伪终端并在 exec 前关闭 echo，覆盖 `isatty` 与 `/dev/tty`。Windows 仍是
-   pipe-only；`resize` 只记录不转发；tty 主机会话的 `proc` 读取不可用。
-   Docker+PTY（宿主 PTY + `docker run -i -t`）已在 Docker Desktop 的 socket harness 上
-   实测为真 tty；docker backend 的 bind mount 路径未在该嵌套环境覆盖，需 Linux 宿主复核。
+   pipe-only；`resize` 在 tty 会话上转发（初始 80×24，SIGWINCH），管道会话只记录；
+   tty 主机会话的 `proc` 读取不可用。Docker+PTY（宿主 PTY + `docker run -i -t`）以及
+   backend 的 `/challenge` bind mount 已在 Docker Desktop 的 socket harness 上端到端验证。
 2. **异族 verifier 未接**：谓词 `check:"verifier"` 路径降级 `interpreted` 不产 Fact。
    Fact 已记录 `verifiedBy`（`predicate` / `verifier`）和可选的 `verifier.model` /
    `promptVersion`，接入时必须带这套元数据；当前所有 Fact 都是 `predicate`。

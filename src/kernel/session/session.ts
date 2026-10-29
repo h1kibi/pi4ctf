@@ -4,8 +4,8 @@
  * STATUS: pipe by default; an opt-in POSIX PTY (`tty: true`) wraps the command
  * in a small python3 helper that allocates the PTY and disables echo before
  * exec, so the child sees a terminal without its input being duplicated.
- * Windows has no PTY path (pipe-only). Resize is recorded but still not
- * forwarded. pwn/rev 题在 pipe 模式下不算完成（review R3）。
+ * Windows has no PTY path (pipe-only). Resize is forwarded to tty sessions;
+ * pipe sessions only record it. pwn/rev 题在 pipe 模式下不算完成（review R3）。
  *
  * Hardened per review C3/C4/C5/R5/R9/R10:
  *   - spawn errors surface as NOT_FOUND instead of crashing the server;
@@ -31,11 +31,17 @@ const READ_QUIET_MS = 150;
 /** Allocate the PTY and disable echo before the child can receive input.
  *  script(1) sets terminal modes only after exec, so early input can echo. */
 const PTY_WRAP = [
-  'import fcntl,os,pty,select,signal,sys,termios',
+  'import fcntl,os,pty,select,signal,struct,sys,termios',
   'm,s=pty.openpty()',
   'a=termios.tcgetattr(s)',
   'a[3]&=~termios.ECHO',
   'termios.tcsetattr(s,termios.TCSANOW,a)',
+  'def setsize(cols,rows):',
+  '    try:',
+  '        fcntl.ioctl(m,termios.TIOCSWINSZ,struct.pack("HHHH",rows,cols,0,0))',
+  '    except OSError:',
+  '        pass',
+  'setsize(80,24)',
   'def bye(*_):',
   '    raise SystemExit(0)',
   'signal.signal(signal.SIGTERM,bye)',
@@ -50,6 +56,17 @@ const PTY_WRAP = [
   '    os.close(m)',
   '    os.execvp(sys.argv[1],sys.argv[1:])',
   'os.close(s)',
+  'def winch(*_):',
+  '    p=os.environ.get("PI4CTF_TTY_RESIZE")',
+  '    if not p:',
+  '        return',
+  '    try:',
+  '        with open(p) as f:',
+  '            c,r=f.read().split()',
+  '        setsize(int(c),int(r))',
+  '    except (OSError,ValueError):',
+  '        pass',
+  'signal.signal(signal.SIGWINCH,winch)',
   'def put(fd,data):',
   '    while data:',
   '        n=os.write(fd,data)',
@@ -172,6 +189,8 @@ export class SessionManager {
       const wrapped = [command, ...commandArgs];
       command = 'python3';
       commandArgs = ['-c', PTY_WRAP, ...wrapped];
+      fs.mkdirSync(path.join(this.project.ctfDir, 'sessions'), { recursive: true });
+      commandEnv = { ...commandEnv, PI4CTF_TTY_RESIZE: this.resizePath(id) };
     }
     const artifact = `artifacts/session-${id}.log`;
     const child = spawn(command, commandArgs, {
@@ -269,10 +288,26 @@ export class SessionManager {
     });
   }
 
-  /** Accepted for contract compatibility; pipes cannot resize. */
+  private resizePath(id: string): string {
+    return path.join(this.project.ctfDir, 'sessions', `${id}.resize`);
+  }
+
+  /** Resize is applied to tty sessions; pipe sessions only record the event. */
   resize(id: string, cols: number, rows: number): void {
-    this.get(id);
-    this.project.appendEvent('session.resize', 'model', { id, cols, rows });
+    const s = this.get(id);
+    const width = Math.min(1000, Math.max(1, Math.floor(cols)));
+    const height = Math.min(1000, Math.max(1, Math.floor(rows)));
+    let applied = false;
+    if (s.state.tty) {
+      try {
+        fs.writeFileSync(this.resizePath(id), `${width} ${height}`);
+        s.child.kill('SIGWINCH');
+        applied = true;
+      } catch {
+        // The wrapper may have exited between the check and the write.
+      }
+    }
+    this.project.appendEvent('session.resize', 'model', { id, cols: width, rows: height, applied });
   }
 
   close(id: string): { exited: boolean } {
@@ -295,6 +330,11 @@ export class SessionManager {
     s.state.closed = true;
     this.persistState(s.state);
     this.live.delete(id);
+    try {
+      fs.rmSync(this.resizePath(id), { force: true });
+    } catch {
+      /* best effort */
+    }
     this.project.appendEvent('session.close', 'model', { id });
     return { exited: true };
   }

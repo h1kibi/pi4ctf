@@ -54,6 +54,39 @@ test('tty session can write to /dev/tty', { skip: SKIP }, async () => {
   }
 });
 
+test('tty session applies resize through the pty wrapper', { skip: SKIP }, async () => {
+  const tp = makeProject();
+  const mgr = new SessionManager(tp.project);
+  try {
+    const state = mgr.open({
+      argv: [
+        'python3', '-u', '-c',
+        [
+          'import shutil, signal, time',
+          's = shutil.get_terminal_size()',
+          "print('INIT', s.columns, s.lines, flush=True)",
+          'def on_winch(*_):',
+          '    s = shutil.get_terminal_size()',
+          "    print('SIZE', s.columns, s.lines, flush=True)",
+          'signal.signal(signal.SIGWINCH, on_winch)',
+          "print('READY', flush=True)",
+          'time.sleep(10)',
+        ].join('\n'),
+      ],
+      tty: true,
+    });
+    const initial = await readUntil(mgr, state.id, 'READY');
+    assert.match(initial, /INIT 80 24/, `initial size: ${JSON.stringify(initial)}`);
+
+    mgr.resize(state.id, 100, 40);
+    const resized = await readUntil(mgr, state.id, 'SIZE 100 40');
+    assert.match(resized, /SIZE 100 40/, `resized output: ${JSON.stringify(resized)}`);
+  } finally {
+    mgr.closeAll();
+    tp.cleanup();
+  }
+});
+
 test('tty session disables terminal echo so input is not duplicated', { skip: SKIP }, async () => {
   const tp = makeProject();
   const mgr = new SessionManager(tp.project);

@@ -178,7 +178,7 @@ export const sessionTool = defineTool({
     argv: Type.Optional(Type.Array(Type.String())),
     data: Type.Optional(Type.String()),
     id: Type.Optional(Type.String()),
-    tty: Type.Optional(Type.Boolean({ description: "Allocate a POSIX pseudo-terminal (python3 helper, echo off) for programs that check isatty or read /dev/tty. POSIX hosts only; resize stays a no-op." })),
+    tty: Type.Optional(Type.Boolean({ description: "Allocate a POSIX pseudo-terminal (python3 helper, echo off) for programs that check isatty or read /dev/tty. POSIX hosts only; resize applies to tty sessions." })),
     timeoutMs: Type.Optional(Type.Number()),
     cols: Type.Optional(Type.Number()),
     rows: Type.Optional(Type.Number()),
