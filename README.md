@@ -155,7 +155,7 @@ Pwn 使用显式 `dockerImage`（`run`/`session` 都在容器内）；
 | `flag` | 提交 flag 候选；内核四层验证 |
 
 helper（14）：`ctf_init`（显式初始化，Java/归档题 fallback）、`env_memory`（工具环境记忆：recall/probe/remember/forget/note，支持 `image=<name>`）、`proc`（session 的 `/proc` 观察）、`artifact_ingest`、`case_preflight`（ELF/libc + 非 ELF 静态元数据）、
-`case_evidence`（artifact 检索）、`case_configure`（flagFormat/oracle/target/dockerImage；backend 与 allowedHosts 仅 `/ctf configure`）、`case_plan`、`case_restart`、
+`case_evidence`（artifact 检索）、`case_configure`（flagFormat/oracle/target/dockerImage；backend 仅 `/ctf configure`，allowedHosts 仅 rt 协议）、`case_plan`、`case_restart`、
 `case_close`、`case_clear_negatives`、`deepseek_search`、`deepseek_fetch`、`deepseek_vision`。
 `/ctf doctor`（host 工具 digest）是命令，不是模型工具；`case` 的 init/status/context/handoff/doctor 核心 API 仍由 adapter/kernel 调用。
 
@@ -189,7 +189,7 @@ flowchart LR
 
 - 环境：bash 与 `run`/`session` 继承同一组代理变量；`NO_PROXY` 默认 loopback；
 - 预算：45 min、30 个 execution slots（`run` / `session.open` / `artifact.ingest`；一个 `run` 占一个 slot，`probes` 批内 1–16 item；`case_restart` 最多 3 次）、120 s/命令、16 KB 观察；packet 约 4–5k tokens。`case_preflight`/`proc` 是静态/观测原语，不占执行预算。packet 显示 remaining/health，并在有历史完成样本时显示同 category 的 median runs-to-solve；统计写在 `~/.pi4ctf/solve-stats.jsonl`（可用 `PI4CTF_STATS_PATH` 覆盖，只记 category/runs/restarts/ts）。
-- target：`project.json.target` 会注入 `HOST`/`PORT`/`TARGET`/`INSTANCE_ID` 环境；`allowedHosts` 默认/显式都始终放行 loopback（localhost/127.0.0.1/::1），`/ctf configure` 可替换 allowedHosts（模型工具不支持）；`run` 可覆盖 `target`/`env`，command 模式的前置 `HOST=... PORT=...` 不再改变 route signature。已声明 target 且带 TCP port 时，`run`/`flag` 默认先做 host 侧 TCP 可达性检查（`targetTimeoutMs` 可调），不可达返回 `TARGET_UNREACHABLE`；无 port/UDP 标记为 `targetReachable=null`（未检查，不伪造 true）。`backend=docker` 时 host 侧检查失败只给 warning，不硬拒 `run`/`flag`。`probes` 批次不共享单 target 预检，按每个 probe 的 `target`/env 分类；需要预检时先用 command `run`。pin oracle 检查新 target 或仅改 oracle 时的当前 target；`run` 内自起靶机才用 `skipTargetCheck=true`。
+- target：`project.json.target` 会注入 `HOST`/`PORT`/`TARGET`/`INSTANCE_ID` 环境；`allowedHosts` 默认/显式都始终放行 loopback（localhost/127.0.0.1/::1），`allowedHosts` 仅通过 rt 协议调整（模型工具不支持）；`run` 可覆盖 `target`/`env`，command 模式的前置 `HOST=... PORT=...` 不再改变 route signature。已声明 target 且带 TCP port 时，`run`/`flag` 默认先做 host 侧 TCP 可达性检查（`targetTimeoutMs` 可调），不可达返回 `TARGET_UNREACHABLE`；无 port/UDP 标记为 `targetReachable=null`（未检查，不伪造 true）。`backend=docker` 时 host 侧检查失败只给 warning，不硬拒 `run`/`flag`。`probes` 批次不共享单 target 预检，按每个 probe 的 `target`/env 分类；需要预检时先用 command `run`。pin oracle 检查新 target 或仅改 oracle 时的当前 target；`run` 内自起靶机才用 `skipTargetCheck=true`。
 - preflight 的 endpoint 是快照；packet 在 target 切换后显示 `preflight endpoint (stale)` 和当前 target。
 - 口径定义：`files`=所有 ELF，`otherFiles`=所有非 ELF（含 generated），`rootFiles`=非 generated 的 roots（ELF+非 ELF，packet 中按 mtime 早→晚展示），`generated`=workspace/build 子集。`rootFiles + generated = files + otherFiles` 仅在 cap 未截断时成立；`otherFilesTotal`/`otherFilesTruncated`/note 记录完整计数，`.ctf/chal.json` 只保存 cap 内的索引（libc 在 `files`/`libc` 中各有一份索引）。
 - Layer 3 的 Fact/Claim 也按当前 target/instance 过滤；旧 target/legacy 记录不会给新 flag 做证据。

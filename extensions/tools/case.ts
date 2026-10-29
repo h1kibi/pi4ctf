@@ -142,7 +142,7 @@ export const caseConfigureTool = defineTool({
   name: "case_configure",
   label: "CTF configure project",
   description:
-    "Repair flagFormat, oracleRef, dockerImage, and/or target, then pin the current oracle file contents. Validates target reachability and oracle binding. Backend and allowedHosts are user decisions; use /ctf configure for those.",
+    "Repair flagFormat, oracleRef, dockerImage, and/or target, then pin the current oracle file contents. Validates target reachability and oracle binding. Backend is a user decision via /ctf configure; allowedHosts is not exposed to model tools.",
   parameters: Type.Object({
     flagFormat: Type.Optional(Type.String({ description: "Regex; omit to keep current" })),
     oracleRef: Type.Optional(Type.String({ description: "Relative oracle path; omit to keep current" })),

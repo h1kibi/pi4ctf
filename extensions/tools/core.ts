@@ -16,7 +16,7 @@ export const ctfInitTool = defineTool({
     "Use ctf_init only when there is no .ctf/project.json; otherwise use case_configure.",
     "Put the oracle outside the challenge workspace and before init; an oracle created later is not trusted.",
     "For Java/web challenges, pass category web/rev and a dockerImage with the matching JDK when needed.",
-    "Backend and scope are user decisions: provide dockerImage to initialize with Docker; omit it for host. Use /ctf init for an explicit backend or allowedHosts choice.",
+    "Backend is a user decision: provide dockerImage to initialize with Docker; omit it for host. Use /ctf init for an explicit backend; allowedHosts is set through the rt protocol.",
   ],
   parameters: Type.Object({
     flagFormat: Type.Optional(Type.String({ description: "Flag regex; defaults to the generic CTF shape" })),

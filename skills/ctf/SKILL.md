@@ -14,8 +14,8 @@ The kernel owns execution, evidence, and flag validation. You own strategy.
 The extension auto-initializes on `session_start` when the directory has CTF
 material and no `.ctf/project.json`. It also runs `case_preflight` and writes
 `.ctf/chal.json`. Do not run `/ctf init` reflexively; use `case_configure` to
-supply a real oracle or flag format. Backend and allowedHosts are user
-decisions: use `/ctf init` / `/ctf configure` for those. `/ctf init` is for a directory
+supply a real oracle or flag format. Backend is a user decision through
+`/ctf configure`; allowedHosts is set through the rt protocol. `/ctf init` is for a directory
 where auto-init was skipped, or after deliberately removing `.ctf/`.
 
 If there is still no project (auto-init disabled, guarded directory, or a
@@ -41,7 +41,7 @@ You can also repair an auto-initialized case without losing evidence:
 ```
 
 `case_configure` accepts `flagFormat`, `oracleRef`, `dockerImage`,
-`target`. Backend and allowedHosts are user decisions through `/ctf configure`. It validates the target it will use before pinning: a new target, or the current target when only `oracleRef` changes. An oracle is pinnable only when it contains `flag` or a 64-hex
+`target`. Backend is a user decision through `/ctf configure`; allowedHosts is not exposed to model tools. It validates the target it will use before pinning: a new target, or the current target when only `oracleRef` changes. An oracle is pinnable only when it contains `flag` or a 64-hex
 `flagSha256`; TCP-less/UDP targets are reported as unchecked, and docker host-side failure is a warning rather than a hard reject; when a target/instance is declared, the oracle must also carry a
 matching `target` (and `instanceId` if the case has one). If the target has
 no `instanceId`, the oracle MUST set `expiresAt`; an expired oracle is rejected. A stray/empty
