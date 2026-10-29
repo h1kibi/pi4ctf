@@ -17,6 +17,7 @@ import { classify } from '../classify/classify.js';
 import { shape } from '../shape/shape.js';
 import type { ProcessOutcome, StreamInfo, TargetSpec } from '../types.js';
 import { targetRef } from '../target.js';
+import { assertIngestSource } from './source.js';
 
 const MAX_INGEST_BYTES = 64 * 1024 * 1024;
 const EXCERPT_CHARS = 1536;
@@ -76,7 +77,7 @@ function emptyStream(id: string, which: string, project: Project): StreamInfo {
 }
 
 export function ingestArtifact(project: Project, input: IngestInput): IngestResult {
-  const src = path.resolve(project.root, input.path);
+  const src = assertIngestSource(project, input.path);
   let stat: fs.Stats;
   try {
     stat = fs.statSync(src);

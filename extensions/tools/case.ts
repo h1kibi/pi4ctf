@@ -48,9 +48,9 @@ export const caseRestartTool = defineTool({
 export const caseCloseTool = defineTool({
   name: "case_close",
   label: "CTF close",
-  description: "Close the case (completed/failed/stopped). Runs are rejected after close.",
+  description: "Close the case as failed or stopped. Completed is reserved for case_complete, which requires a verified Fact. Runs are rejected after close.",
   parameters: Type.Object({
-    status: Type.Optional(Type.String({ description: "completed | failed | stopped" })),
+    status: Type.Optional(Type.String({ description: "failed | stopped (completed is rejected; use case_complete)" })),
     root: RootParam,
   }),
   async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -68,7 +68,7 @@ export const artifactIngestTool = defineTool({
   name: "artifact_ingest",
   label: "CTF artifact ingest",
   description:
-    "Copy an external evidence file (webhook capture, downloaded response, /tmp log) into .ctf/artifacts and create a synthetic outcome/observation, so claim quotes and flag provenance can use it. synthetic=true marks dry-run evidence.",
+    "Copy an external evidence file (webhook capture, downloaded response, /tmp log) into .ctf/artifacts and create a synthetic outcome/observation, so claim quotes and flag provenance can use it. Sources must be under workspace/, the OS temp dir, or PI4CTF_INGEST_ROOTS; the case oracle and .ctf/ are refused. synthetic=true marks dry-run evidence.",
   parameters: Type.Object({
     path: Type.String({ description: "File path, absolute or relative to the project root" }),
     name: Type.Optional(Type.String({ description: "Artifact stem; defaults to a generated name" })),

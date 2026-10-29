@@ -90,3 +90,34 @@ test('artifact.ingest transform records source hash and decodes hex', async () =
     fs.rmSync(outside, { force: true });
   }
 });
+
+test('artifact.ingest refuses the case oracle and .ctf state', async () => {
+  const tp = makeProject();
+  try {
+    const oracleRel = path.relative(tp.root, tp.oraclePath);
+    const oracle = await dispatch({ op: 'artifact.ingest', root: tp.root, input: { path: oracleRel } });
+    assert.equal(oracle.ok, false);
+    assert.equal(oracle.ok ? '' : oracle.error.code, 'SECURITY');
+
+    const state = await dispatch({ op: 'artifact.ingest', root: tp.root, input: { path: '.ctf/project.json' } });
+    assert.equal(state.ok, false);
+    assert.equal(state.ok ? '' : state.error.code, 'SECURITY');
+  } finally {
+    tp.cleanup();
+  }
+});
+
+test('artifact.ingest refuses files outside workspace, temp and configured roots', async () => {
+  const tp = makeProject();
+  const outsideDir = fs.mkdtempSync(path.join(os.homedir(), '.pi4ctf-ingest-'));
+  const outside = path.join(outsideDir, 'outside.txt');
+  try {
+    fs.writeFileSync(outside, 'outside\n');
+    const res = await dispatch({ op: 'artifact.ingest', root: tp.root, input: { path: outside } });
+    assert.equal(res.ok, false);
+    assert.equal(res.ok ? '' : res.error.code, 'SECURITY');
+  } finally {
+    tp.cleanup();
+    fs.rmSync(outsideDir, { recursive: true, force: true });
+  }
+});

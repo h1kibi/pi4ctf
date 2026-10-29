@@ -43,7 +43,7 @@ export function commandExists(command: string): boolean {
   const hit = cache.get(command);
   if (hit !== undefined) return hit;
   const probe = process.platform === 'win32'
-    ? spawnSync('where', [command], { stdio: 'ignore', shell: true })
+    ? spawnSync('where', [command], { stdio: 'ignore' })
     : spawnSync('which', [command], { stdio: 'ignore' });
   const found = probe.status === 0;
   cache.set(command, found);

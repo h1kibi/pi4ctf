@@ -45,7 +45,10 @@ export async function handleCase(req: Request, op: string, input: Record<string,
     case 'project.close':
     case 'case.close': {
       const project = needRoot(req);
-      const status = input.status === 'failed' || input.status === 'stopped' ? input.status : 'completed';
+      if (input.status === 'completed') {
+        throw new KernelError('CONFLICT', 'case.close cannot mark a case completed; use case.complete (verified Fact gate)');
+      }
+      const status = input.status === 'stopped' ? 'stopped' : 'failed';
       project.close(status);
       return ok(op, { status });
     }

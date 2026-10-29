@@ -10,6 +10,7 @@ import { test } from 'node:test';
 import { dispatch } from '../adapter/protocol.js';
 import { scanInjection, wrapUntrusted } from '../kernel/security.js';
 import { Project } from '../kernel/project.js';
+import { commandExists } from '../kernel/sysutil.js';
 import { makeProject } from './helpers.js';
 
 const NODE = process.execPath;
@@ -91,6 +92,25 @@ test('injection fixture: untrusted text is scanned, wrapped, never executed', as
   } finally {
     tp.cleanup();
   }
+});
+
+test('case.close cannot bypass the verified-Fact completion gate', async () => {
+  const tp = makeProject();
+  try {
+    const completed = await dispatch({ op: 'case.close', root: tp.root, input: { status: 'completed' } });
+    assert.equal(completed.ok, false);
+    assert.equal(completed.ok ? '' : completed.error.code, 'CONFLICT');
+
+    const implicit = await dispatch({ op: 'case.close', root: tp.root, input: {} });
+    assert.equal(implicit.ok, true, JSON.stringify(implicit));
+    assert.equal(implicit.ok ? implicit.data.status : '', 'failed');
+  } finally {
+    tp.cleanup();
+  }
+});
+
+test('commandExists treats metacharacters as a literal name', () => {
+  assert.equal(commandExists('node & echo PI4CTF_INJECTED'), false);
 });
 
 test('root identity: a foreign root identity fails closed', () => {

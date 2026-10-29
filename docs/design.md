@@ -471,6 +471,9 @@ Re-anchor    plan / budget / drift → next claim or restart
 ## 7. 安全与信任边界
 
 - 挑战材料 `<UNTRUSTED_DATA>`；parsed 优先；quote 是数据不是指令；
+- `artifact_ingest` 的来源限于 `workspace/`、系统临时目录或 `PI4CTF_INGEST_ROOTS`；
+  oracle 与 `.ctf/` 不可 ingest（否则 ground truth 会被复制成“证据”）；
+- `case_close` 不能标记 `completed`；`complete` 只认 verified Fact；
 - kernel-only：`flag` 写入、`complete`、global memory、scope/budget/guardrail 变更；
 - 注入 fixture：假 flag、ignore instructions、写 global memory、扩 allowedHosts、直写 flag；
 - `tool_call` hook 校验 goal contract；越界阻断并审计；
