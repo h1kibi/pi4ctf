@@ -239,7 +239,7 @@ python scripts/ctftiny_dynamic_round.py --harness bare \
 设计文档 §9 的回退阀（B2−B0、verifier 误拒率、case precision）只认完整对照；
 小样本 pilot 只验证 harness，不能用来下结论。
 
-CI 在 `.github/workflows/ci.yml`：push/PR 上跑两个 `tsc` 加全部 185 项测试。
+CI 在 `.github/workflows/ci.yml`：push/PR 上跑两个 `tsc` 加全部 192 项测试。
 
 ## Rust 的轻量高性能
 
