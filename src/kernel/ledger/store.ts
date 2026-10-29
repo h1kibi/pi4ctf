@@ -1,0 +1,314 @@
+/**
+ * Ledger store: the four records (docs/design.md §4.2) plus the negative
+ * ledger gate. Store rows are never deleted; dedupe only affects packet/
+ * recent views and counters. One file per node, atomic replace, append-only
+ * events.
+ */
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { KernelError } from '../error.js';
+import { atomicWriteFile, readJson } from '../fsutil.js';
+import { Project } from '../project.js';
+import type {
+  Claim,
+  EvidenceItem,
+  Fact,
+  NegativeEntry,
+  ProcessOutcome,
+} from '../types.js';
+
+export class Ledger {
+  constructor(private readonly project: Project) {}
+
+  // -- outcomes -------------------------------------------------------------
+
+  getOutcome(id: string): ProcessOutcome {
+    const p = path.join(this.project.ctfDir, `outcomes/${id}.json`);
+    if (!fs.existsSync(p)) throw new KernelError('NOT_FOUND', `outcome ${id} not found`);
+    return readJson<ProcessOutcome>(p);
+  }
+
+  listOutcomes(): ProcessOutcome[] {
+    // Timestamp order, not filename order: case.restart resets the budget
+    // counter while command ids stay monotonic across the same case.
+    return this.listDir<ProcessOutcome>('outcomes').sort((a, b) => (a.ts - b.ts) || a.id.localeCompare(b.id));
+  }
+
+  /** Resolve a parent outcome or a child evidence item by canonical ref. */
+  getEvidence(ref: string): {
+    kind: 'outcome' | 'item';
+    outcome: ProcessOutcome;
+    item: EvidenceItem | null;
+  } {
+    if (/^cmd-\d{4}$/.test(ref)) {
+      return { kind: 'outcome', outcome: this.getOutcome(ref), item: null };
+    }
+    const m = /^(cmd-\d{4})\.(\d{4})$/.exec(ref);
+    if (!m) throw new KernelError('INVALID_REQUEST', `invalid evidence ref: ${ref}`);
+    const outcome = this.getOutcome(m[1]);
+    const p = path.join(this.project.ctfDir, `items/${ref}.json`);
+    if (!fs.existsSync(p)) throw new KernelError('NOT_FOUND', `evidence item ${ref} not found`);
+    return { kind: 'item', outcome, item: readJson<EvidenceItem>(p) };
+  }
+
+  /** The only artifacts a claim quoting `refs` may anchor to. */
+  allowedShapedRefs(refs: string[]): Set<string> {
+    const allowed = new Set<string>();
+    for (const ref of refs) {
+      const resolved = this.getEvidence(ref);
+      if (resolved.item) {
+        allowed.add(resolved.item.stdout.shapedRef);
+        allowed.add(resolved.item.stderr.shapedRef);
+      } else {
+        allowed.add(resolved.outcome.stdout.shapedRef);
+        allowed.add(resolved.outcome.stderr.shapedRef);
+      }
+    }
+    return allowed;
+  }
+
+  private resolveArtifact(relRef: string): string {
+    if (relRef.includes('..') || path.isAbsolute(relRef)) {
+      throw new KernelError('SECURITY', `bad artifact ref ${relRef}`);
+    }
+    // Per-segment no-follow (review C2): a symlink planted anywhere on the
+    // path must not let the reader escape .ctf/.
+    const normalized = path.posix.normalize(relRef.replace(/\\/g, '/'));
+    let cur = this.project.ctfDir;
+    for (const seg of normalized.split('/')) {
+      if (seg === '' || seg === '.') continue;
+      cur = path.join(cur, seg);
+      let st: import('node:fs').Stats;
+      try {
+        st = fs.lstatSync(cur);
+      } catch {
+        throw new KernelError('NOT_FOUND', `artifact ${relRef} not found`);
+      }
+      if (st.isSymbolicLink()) {
+        throw new KernelError('SECURITY', `symlink in artifact path: ${relRef}`);
+      }
+    }
+    // Final containment: realpath must stay inside the realpath of .ctf.
+    const realRoot = fs.realpathSync(this.project.ctfDir);
+    const real = fs.realpathSync(cur);
+    if (real !== realRoot && !real.startsWith(realRoot + path.sep)) {
+      throw new KernelError('SECURITY', `artifact ref escapes .ctf: ${relRef}`);
+    }
+    if (!fs.existsSync(cur)) throw new KernelError('NOT_FOUND', `artifact ${relRef} not found`);
+    return cur;
+  }
+
+  readArtifact(relRef: string): string {
+    return fs.readFileSync(this.resolveArtifact(relRef), 'utf8');
+  }
+
+  readArtifactBuffer(relRef: string): Buffer {
+    return fs.readFileSync(this.resolveArtifact(relRef));
+  }
+
+  // -- claims ---------------------------------------------------------------
+
+  saveClaim(claim: Claim): void {
+    atomicWriteFile(
+      path.join(this.project.ctfDir, `claims/${claim.id}.json`),
+      JSON.stringify(claim, null, 2),
+    );
+  }
+
+  getClaim(id: string): Claim {
+    const p = path.join(this.project.ctfDir, `claims/${id}.json`);
+    if (!fs.existsSync(p)) throw new KernelError('NOT_FOUND', `claim ${id} not found`);
+    return readJson<Claim>(p);
+  }
+
+  listClaims(): Claim[] {
+    return this.listDir<Claim>('claims');
+  }
+
+  /** Open claims (proposed/checking) are the work queue; they enter the packet. */
+  openClaims(): Claim[] {
+    return this.listClaims().filter((c) => c.state === 'proposed' || c.state === 'checking');
+  }
+
+  /** Resubmission gate: same claim signature is blocked unless it cites a
+   *  new artifact or a new span (docs/design.md §4.2). */
+  findSameSignature(signature: string): Claim[] {
+    return this.listClaims().filter((c) => c.signature === signature);
+  }
+
+  // -- facts ----------------------------------------------------------------
+
+  saveFact(fact: Fact): void {
+    atomicWriteFile(
+      path.join(this.project.ctfDir, `facts/${fact.id}.json`),
+      JSON.stringify(fact, null, 2),
+    );
+    this.project.appendEvent('fact.add', 'kernel', {
+      id: fact.id,
+      claimId: fact.claimId,
+      predicate: fact.predicate,
+    });
+  }
+
+  listFacts(): Fact[] {
+    return this.listDir<Fact>('facts');
+  }
+
+  getFact(id: string): Fact {
+    const p = path.join(this.project.ctfDir, `facts/${id}.json`);
+    if (!fs.existsSync(p)) throw new KernelError('NOT_FOUND', `fact ${id} not found`);
+    return readJson<Fact>(p);
+  }
+
+  // -- negative ledger ------------------------------------------------------
+
+  listNegatives(): NegativeEntry[] {
+    // Legacy exec-local entries collapsed every `python -c` into one signature;
+    // they are no longer created and must not poison the packet or gate.
+    return this.listDir<NegativeEntry>('negatives')
+      .filter((n) => !(n.transient && n.signature.startsWith('exec-local|')));
+  }
+
+  /** Record/upsert a negative entry. failureClass is code-owned. Upsert is
+   *  keyed by signature: attempts increment, latest class wins. */
+  addNegative(entry: Omit<NegativeEntry, 'attempts' | 'lastAttemptAt' | 'id'> & { attempts?: number; id?: string }): NegativeEntry {
+    const existing = this.listNegatives().find((n) => n.signature === entry.signature);
+    const now = Date.now();
+    const record = existing
+      ? {
+          ...existing,
+          ...entry,
+          id: existing.id,
+          attempts: (existing.attempts ?? 0) + 1,
+          lastAttemptAt: now,
+          unblockedAt: null, // fresh failure re-arms the gate
+          unblockReason: null,
+        }
+      : { ...entry, id: entry.id ?? this.project.allocId('negative').id, attempts: entry.attempts ?? 1, lastAttemptAt: now } as NegativeEntry;
+    atomicWriteFile(
+      path.join(this.project.ctfDir, `negatives/${record.id}.json`),
+      JSON.stringify(record, null, 2),
+    );
+    this.project.appendEvent('negative.add', 'kernel', {
+      signature: record.signature,
+      failureClass: record.failureClass,
+      transient: record.transient,
+      blockScope: record.blockScope,
+      attempts: record.attempts,
+    });
+    return record;
+  }
+
+  /** The signature gate: hard-block only non-transient entries; transient
+   *  entries block until TTL/probe/env_change (ADR 0002 §4). Returns the
+   *  blocking entry or null. Expiry is marked once on the entry so the
+   *  `unblocked` audit event is not re-emitted on every check. */
+  blockedSignature(signature: string): NegativeEntry | null {
+    let blocked: NegativeEntry | null = null;
+    for (const entry of this.listNegatives()) {
+      if (entry.signature !== signature) continue;
+      if (entry.transient) {
+        if (entry.expiresAt !== null && Date.now() > entry.expiresAt) {
+          if (!entry.unblockedAt && entry.id) {
+            const marked = { ...entry, unblockedAt: Date.now(), unblockReason: 'ttl' as const };
+            atomicWriteFile(
+              path.join(this.project.ctfDir, `negatives/${marked.id}.json`),
+              JSON.stringify(marked, null, 2),
+            );
+            this.project.appendEvent('negative.unblocked', 'kernel', {
+              signature,
+              reason: 'ttl',
+            });
+          }
+          continue;
+        }
+        if (entry.unblockedAt) continue;
+      }
+      blocked = entry;
+    }
+    return blocked;
+  }
+
+  /** A restart is a new context: transient (soft) blocks from the previous
+   *  attempt must not poison the next one. Hard blocks stay. Rows are marked,
+   *  not deleted, so the audit trail survives. */
+  clearTransientNegatives(): number {
+    let cleared = 0;
+    for (const entry of this.listNegatives()) {
+      if (!entry.transient || entry.unblockedAt) continue;
+      if (!entry.id) continue;
+      const marked = {
+        ...entry,
+        unblockedAt: Date.now(),
+        unblockReason: 'env_change' as const,
+      };
+      atomicWriteFile(
+        path.join(this.project.ctfDir, `negatives/${marked.id}.json`),
+        JSON.stringify(marked, null, 2),
+      );
+      this.project.appendEvent('negative.unblocked', 'kernel', {
+        signature: entry.signature,
+        reason: 'env_change',
+        source: 'case.restart',
+      });
+      cleared++;
+    }
+    return cleared;
+  }
+
+  // -- dedupe index (projection; store rows are never removed) --------------
+
+  /** Count of executions per canonicalKey. */
+  canonicalCounts(): Map<string, number> {
+    const counts = new Map<string, number>();
+    for (const o of this.listOutcomes()) {
+      counts.set(o.canonicalKey, (counts.get(o.canonicalKey) ?? 0) + 1);
+    }
+    return counts;
+  }
+
+  /** Recent outcomes for the packet: newest first, deduped by canonicalKey
+   *  except legs referenced by open claims (differential/time-based
+   *  exemption, docs/design.md §4.1). */
+  recentOutcomes(limit: number): ProcessOutcome[] {
+    const exempt = new Set<string>();
+    for (const claim of this.openClaims()) {
+      for (const ref of claim.refs) {
+        // Item refs reserve their parent outcome in the packet; the parent is
+        // the dedupe unit over the wire.
+        exempt.add(ref);
+        exempt.add(ref.split('.')[0]);
+      }
+    }
+    const seen = new Set<string>();
+    const out: ProcessOutcome[] = [];
+    for (const o of [...this.listOutcomes()].reverse()) {
+      if (exempt.has(o.id)) {
+        out.push(o);
+        continue;
+      }
+      if (seen.has(o.canonicalKey)) continue;
+      seen.add(o.canonicalKey);
+      out.push(o);
+    }
+    return out.slice(0, limit);
+  }
+
+  private listDir<T>(dir: string): T[] {
+    const abs = path.join(this.project.ctfDir, dir);
+    if (!fs.existsSync(abs)) return [];
+    const names = fs
+      .readdirSync(abs)
+      .filter((n) => n.endsWith('.json'))
+      .sort();
+    const items: T[] = [];
+    for (const name of names) {
+      try {
+        items.push(readJson<T>(path.join(abs, name)));
+      } catch {
+        // skip unreadable node; doctor reports it
+      }
+    }
+    return items;
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "name": "pi4ctf",
+  "version": "0.1.0",
+  "description": "pi4ctf TS kernel: 4 verbs / 5 mechanisms / 4 records (walking skeleton per docs/design.md)",
+  "type": "module",
+  "private": true,
+  "keywords": ["pi-package", "ctf", "security"],
+  "pi": {
+    "extensions": ["./extensions/ctf.ts"],
+    "skills": ["./skills/ctf"]
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "files": [
+    "dist",
+    "extensions",
+    "skills",
+    "sandbox",
+    "README.md",
+    "IMPLEMENTATION.md"
+  ],
+  "bin": {
+    "rt": "dist/rt.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "tsc -p tsconfig.json && tsc -p tsconfig.extensions.json && node --test --test-concurrency=1 \"dist/test/*.test.js\"",
+    "test:image": "npm run build && node scripts/verify-env-image.mjs",
+    "rt": "node dist/rt.js"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  }
+}

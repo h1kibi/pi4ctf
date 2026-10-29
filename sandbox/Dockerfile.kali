@@ -1,0 +1,62 @@
+# pi4ctf Kali sandbox — single derived image (docs/design.md §5.2)
+#
+# REPRODUCIBILITY GATE (review R6): the build MUST be digest-stable.
+#   1. Pin the base digest:
+#      docker manifest inspect kalilinux/kali-rolling:latest
+#      -> set KALI_BASE below to kalilinux/kali-rolling@sha256:<digest>
+#   2. Pin the Ghidra artifact sha256 (GHIDRA_SHA256).
+#   3. apt versions are recorded by scripts/build-image.sh on first build
+#      (apt-cache policy) — freeze them via packages.lock before trusting
+#      the two-builds-same-digest gate.
+# The placeholder digest intentionally FAILS the build until pinned.
+#
+# Build:
+#   docker build -f sandbox/Dockerfile.kali -t pi4ctf-sandbox:latest sandbox/
+#
+# Layout contract with the kernel:
+#   /challenge            challenge material, mounted read-only
+#   /challenge/workspace  the only writable directory
+#   /opt/toolbox.digest.json  zero-LLM toolbox digest (<=0.5KB)
+#
+# No ENTRYPOINT: the kernel runs `docker run … <image> <argv…>` and argv must
+# execute directly, not be swallowed by a shell -c wrapper (review R6).
+
+ARG KALI_BASE=kalilinux/kali-rolling@sha256:REPLACE_WITH_PINNED_DIGEST
+FROM ${KALI_BASE}
+
+ARG GHIDRA_VERSION=11.3.1
+ARG GHIDRA_BUILD=20250219
+ARG GHIDRA_SHA256=REPLACE_WITH_GHIDRA_ZIP_SHA256
+
+ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      # pwn
+      gdb gdbserver one_gadget ropper ROPgadget python3-pwntools \
+      # crypto
+      sage sagemath python3-pycryptodome python3-gmpy2 python3-z3 rsactftool \
+      # web
+      sqlmap ffuf seclists hashcat jwt-tool \
+      # rev
+      radare2 binutils ltrace strace \
+      # forensics
+      binwalk volatility3 stegseek exiftool tshark sleuthkit \
+      # general
+      python3 python3-pip gcc git jq curl netcat-openbsd openssh-client \
+      unzip xxd file ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Ghidra headless with checksum verification (no blind ADD).
+RUN curl -fsSL -o /tmp/ghidra.zip \
+      "https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_${GHIDRA_VERSION}_build/ghidra_${GHIDRA_VERSION}_PUBLIC_${GHIDRA_BUILD}.zip" \
+    && echo "${GHIDRA_SHA256}  /tmp/ghidra.zip" | sha256sum -c - \
+    && unzip -q /tmp/ghidra.zip -d /opt && rm /tmp/ghidra.zip \
+    && ln -s /opt/ghidra_*/support/analyzeHeadless /usr/local/bin/analyzeHeadless
+
+# Zero-LLM toolbox digest (<=0.5KB, valid compact JSON).
+COPY scripts/toolbox-digest.sh /usr/local/bin/toolbox-digest
+RUN chmod +x /usr/local/bin/toolbox-digest && toolbox-digest > /opt/toolbox.digest.json \
+    && python3 -c "import json;d=json.load(open('/opt/toolbox.digest.json'));assert len(open('/opt/toolbox.digest.json').read())<=512"
+
+WORKDIR /challenge/workspace
+CMD ["/bin/bash", "-l"]

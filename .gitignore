@@ -1,0 +1,20 @@
+node_modules/
+dist/
+.ctf/
+*.log
+sandbox/toolbox.digest.json
+
+# Local benchmark data: challenge binaries, oracles and accepted flags.
+challenges/
+
+# Third-party repositories cloned for research (licensing and size).
+audit/
+
+# Scratch workspace and internal working notes.
+workspace/
+debate/
+tx-guideline.md
+
+# Temporary files.
+.tmp-*
+*.tmp

@@ -1,0 +1,9 @@
+line1
+[31mRED[0m normal
+line1
+line1
+line1
+line1
+]0;titleafter-osc
+error: connection refused
+flag{not_the_real_one}

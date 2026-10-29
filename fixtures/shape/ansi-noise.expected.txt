@@ -1,0 +1,9 @@
+line1
+RED normal
+line1
+line1
+line1
+[REPEATED 1 identical line OMITTED]
+after-osc
+error: connection refused
+flag{not_the_real_one}
