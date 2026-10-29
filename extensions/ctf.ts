@@ -243,10 +243,8 @@ export default function pi4ctf(pi: ExtensionAPI): void {
   // Inject the kernel packet before each user-initiated run. Custom
   // notifications skip this so we do not repeat stale context.
   pi.on("before_agent_start", async (event, ctx) => {
-    // 0.84's runtime may still carry messageType for custom-triggered runs;
-    // its d.ts exposes prompt/images instead. Be tolerant of both.
-    const messageType = (event as typeof event & { messageType?: "user" | "custom" }).messageType;
-    if (messageType === "custom") return;
+    // Custom-triggered runs (notifications) must not re-inject the packet.
+    if (event.messageType === "custom") return;
     const root = await ensureAutoProject(ctx);
     if (!root || !hasProject(root)) {
       if (scanChallenge(ctx.cwd).hasMarker) {

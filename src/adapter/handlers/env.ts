@@ -81,7 +81,8 @@ export async function handleEnv(req: Request, op: string, input: Record<string, 
         return ok(op, { removed: removedIds.length > 0, removedIds });
       }
       if (action === 'note') {
-        return ok(op, { note: recordNote(ctx, str(input, 'text')) });
+        const written = recordNote(ctx, str(input, 'text'));
+        return ok(op, { note: written.note, ...(written.redacted ? { redacted: true } : {}) });
       }
       throw new KernelError('INVALID_REQUEST', 'env.memory action must be recall/probe/remember/forget/note');
     }

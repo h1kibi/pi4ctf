@@ -847,3 +847,73 @@ test('records folds unverified user versions and keeps verified tools', async ()
     fs.rmSync(home, { recursive: true, force: true });
   }
 });
+
+test('environment notes redact flags and credentials before storage', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'pi4ctf-env-redact-'));
+  const oldHome = process.env.PI4CTF_HOME;
+  process.env.PI4CTF_HOME = home;
+  const tp = makeProject();
+  try {
+    const ctx = envContextOf(tp.project);
+    recordNote(ctx, 'target leaked flag{redact_me_please} in the banner');
+    recordNote(ctx, 'jumpbox password=hunter2 for the staging host');
+    recordNote(ctx, `github token ghp_${'a'.repeat(36)}`);
+    const texts = recall(ctx).notes.map((note) => note.text).join('\n');
+    assert.ok(!texts.includes('redact_me_please'), 'flag body must not be stored');
+    assert.ok(!texts.includes('hunter2'), 'password value must not be stored');
+    assert.ok(!texts.includes('ghp_'), 'github token must not be stored');
+    assert.match(texts, /\[redacted-flag\]/);
+    assert.match(texts, /password=\[redacted\]/);
+
+    recordNote(ctx, 'RTX 3060 driver 591.86 with OpenCL ICD');
+    assert.ok(
+      recall(ctx).notes.some((note) => note.text === 'RTX 3060 driver 591.86 with OpenCL ICD'),
+      'benign notes must survive unchanged',
+    );
+  } finally {
+    tp.cleanup();
+    if (oldHome === undefined) delete process.env.PI4CTF_HOME;
+    else process.env.PI4CTF_HOME = oldHome;
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('docker probe records expire by age because image tags rebuild', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'pi4ctf-env-docker-ttl-'));
+  const oldHome = process.env.PI4CTF_HOME;
+  process.env.PI4CTF_HOME = home;
+  const docker = makeProject({ backend: 'docker', dockerImage: 'example:ttl' });
+  const host = makeProject();
+  const sig = { size: fs.statSync(NODE).size, mtimeMs: fs.statSync(NODE).mtimeMs };
+  try {
+    const dockerCtx = envContextOf(docker.project);
+    const hostCtx = envContextOf(host.project);
+    recordProbe(dockerCtx, 'gcc', { path: '/usr/bin/gcc', realpath: '/usr/bin/gcc', version: '13.2.0', sig: null });
+    recordProbe(hostCtx, 'gdb', { path: NODE, realpath: NODE, version: '16.3', sig });
+    assert.equal(recall(dockerCtx, { id: 'gcc' }).tools[0]?.status, 'verified');
+    assert.equal(recall(hostCtx, { id: 'gdb' }).tools[0]?.status, 'verified');
+
+    for (const ctx of [dockerCtx, hostCtx]) {
+      const file = storePath(ctx);
+      const store = JSON.parse(fs.readFileSync(file, 'utf8')) as { tools: Record<string, { seenAt: number }> };
+      for (const tool of Object.values(store.tools)) tool.seenAt = Date.now() - 10 * 86_400_000;
+      fs.writeFileSync(file, JSON.stringify(store));
+    }
+    assert.equal(
+      recall(dockerCtx, { id: 'gcc' }).tools[0]?.status,
+      'stale',
+      'a docker record cannot stay verified on age alone',
+    );
+    assert.equal(
+      recall(hostCtx, { id: 'gdb' }).tools[0]?.status,
+      'verified',
+      'a host signature still validates a 10-day-old record',
+    );
+  } finally {
+    docker.cleanup();
+    host.cleanup();
+    if (oldHome === undefined) delete process.env.PI4CTF_HOME;
+    else process.env.PI4CTF_HOME = oldHome;
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});

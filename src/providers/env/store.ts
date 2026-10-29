@@ -6,6 +6,7 @@ import { atomicWriteFile, FileLock, sha256 } from '../../kernel/fsutil.js';
 import { KernelError } from '../../kernel/error.js';
 import { matchesCapability, providesFor } from './table.js';
 import type { EnvContext } from './context.js';
+import { redactSecrets } from './redact.js';
 
 export interface EnvIdentity {
   backend: 'host' | 'docker';
@@ -81,6 +82,9 @@ const ID_RE = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,31}(?:@[0-9]{1,3})?$/;
 const VERSION_RE = /^[0-9A-Za-z._+()\-\t ]{1,64}$/;
 const MAX_TOOLS = 64;
 const TTL_DAYS = 30;
+/** Docker probe records carry no file signature, so only their age bounds
+ *  their truthfulness; a rebuilt image tag must not stay "verified" for a month. */
+const DOCKER_TTL_DAYS = 7;
 
 export function isToolId(value: string): boolean {
   return ID_RE.test(value);
@@ -390,7 +394,8 @@ function deriveStatus(ctx: EnvContext, tool: EnvTool): RecallTool['status'] {
   }
   if (tool.source === 'user' && !tool.sig) return 'unverified';
   if (tool.source === 'probe' && identity.backend === 'host' && !tool.sig) return 'stale';
-  if (ageDays(tool.seenAt) > TTL_DAYS) return 'stale';
+  const ttlDays = identity.backend === 'host' ? TTL_DAYS : DOCKER_TTL_DAYS;
+  if (ageDays(tool.seenAt) > ttlDays) return 'stale';
   return 'verified';
 }
 
@@ -556,16 +561,22 @@ export function recordAbsent(ctx: EnvContext, id: string, reason?: string, actua
   });
 }
 
-export function recordNote(ctx: EnvContext, text: string): EnvNote {
+export interface NoteWrite {
+  note: EnvNote;
+  redacted: boolean;
+}
+
+export function recordNote(ctx: EnvContext, text: string): NoteWrite {
   const clean = text.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 512);
   if (!clean) throw new KernelError('INVALID_REQUEST', 'note text is empty');
-  let stored: EnvNote = { text: clean, seenAt: Date.now(), origin: ctx.origin };
+  const { text: safe, redacted } = redactSecrets(clean);
+  const stored: EnvNote = { text: safe, seenAt: Date.now(), origin: ctx.origin };
   updateStore(ctx, (store) => {
     const notes = store.notes ?? [];
-    if (!notes.some((note) => note.text === clean)) notes.push(stored);
+    if (!notes.some((note) => note.text === safe)) notes.push(stored);
     store.notes = notes.slice(-20);
   });
-  return stored;
+  return { note: stored, redacted };
 }
 
 export function doctorTools(ctx: EnvContext): Record<string, boolean> {

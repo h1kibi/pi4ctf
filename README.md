@@ -211,6 +211,30 @@ flowchart LR
 - `/ctf doctor` 返回 env-memory 视图 + lock/backend 诊断，不再维护固定 host 工具名单；用 `env_memory probe` 刷新当前 backend 的工具。
 - 平台：Windows host + WSL2/Docker；Linux CI 跑测试与基准；**Kali sandbox 是 P0**。
 
+## 评测对照
+
+`scripts/ctftiny_dynamic_round.py` 支持同题、同模型、同预算的两臂对照：
+
+```bash
+# B2：完整 pi4ctf（run/session/claim/flag，禁 bash）
+python scripts/ctftiny_dynamic_round.py --harness full \
+  --only cry-describeme,pwn-get-it --timeout 240 \
+  --results-dir challenges/ab-pilot/full
+
+# B0：裸 pi + 同一 skill + bash/file 工具，不加载 pi4ctf 扩展
+python scripts/ctftiny_dynamic_round.py --harness bare \
+  --only cry-describeme,pwn-get-it --timeout 240 \
+  --results-dir challenges/ab-pilot/bare
+```
+
+每条记录带 `harness` 字段，结果写在 `--results-dir`。`challenges/` 已被 gitignore：
+对照数据留在本地，不进仓库。
+
+设计文档 §9 的回退阀（B2−B0、verifier 误拒率、case precision）只认完整对照；
+小样本 pilot 只验证 harness，不能用来下结论。
+
+CI 在 `.github/workflows/ci.yml`：push/PR 上跑两个 `tsc` 加全部 185 项测试。
+
 ## Rust 的轻量高性能
 
 - 单静态二进制，目标 **<5 MB**、冷启动 **<20 ms**、4 sessions RSS **<32 MB**。
@@ -228,3 +252,7 @@ flowchart LR
 - 不做 LLM summarizer、不做自动提交、不做 auto-swarm。
 - TUI、memory later；Rust 是目标形态，不是第一阶段。
 - 少到能读完，快到不拖模型。
+
+## 许可证
+
+MIT，见 [LICENSE](LICENSE)。

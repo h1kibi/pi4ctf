@@ -4,6 +4,7 @@
   "description": "pi4ctf TS kernel: 4 verbs / 5 mechanisms / 4 records (walking skeleton per docs/design.md)",
   "type": "module",
   "private": true,
+  "license": "MIT",
   "keywords": [
     "pi-package",
     "ctf",

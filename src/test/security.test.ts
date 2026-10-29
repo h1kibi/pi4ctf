@@ -4,6 +4,7 @@
  */
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { test } from 'node:test';
 import { dispatch } from '../adapter/protocol.js';
@@ -92,8 +93,9 @@ test('injection fixture: untrusted text is scanned, wrapped, never executed', as
   }
 });
 
-test('root identity: replacing the project root fails closed', () => {
+test('root identity: renaming keeps the project, replacing it fails closed', () => {
   const tp = makeProject();
+  const replaced = fs.mkdtempSync(path.join(os.tmpdir(), 'pi4ctf-replaced-'));
   try {
     const root = tp.root;
     // same-volume rename keeps the file id (same filesystem object) -> still opens
@@ -101,22 +103,24 @@ test('root identity: replacing the project root fails closed', () => {
     fs.renameSync(root, moved);
     Project.open(moved);
     fs.renameSync(moved, root);
-    // replacing the root with a fresh directory at the same path is a
-    // different filesystem object -> kernel must fail closed
-    fs.rmSync(root, { recursive: true, force: true });
-    fs.mkdirSync(path.join(root, '.ctf'), { recursive: true });
+    // a fresh directory with a foreign identity must fail closed. Building it
+    // outside the original path avoids Windows delete/recreate sharing races
+    // (and inode reuse on Linux) that made this trigger nondeterministic.
+    fs.mkdirSync(path.join(replaced, '.ctf'), { recursive: true });
     fs.writeFileSync(
-      path.join(root, '.ctf', 'project.json'),
+      path.join(replaced, '.ctf', 'project.json'),
       JSON.stringify({
         version: 1, id: 'x', title: 'x', goal: '', origin: '', status: 'active',
-        category: 'x', backend: 'host', root, rootIdentity: 'dev:dead:ino:beef',
+        category: 'x', backend: 'host', root: replaced, rootIdentity: 'dev:dead:ino:beef',
         envHash: '', flagFormat: 'f', oracle: { type: 'local', ref: '../o.json' },
         deadlineMs: null, allowedHosts: ['*'], counters: {}, revisions: {},
       }),
     );
-    assert.throws(() => Project.open(root), /root identity mismatch/);
+    assert.throws(() => Project.open(replaced), /root identity mismatch/);
   } finally {
     tp.cleanup();
+    fs.rmSync(`${tp.root}-moved`, { recursive: true, force: true });
+    fs.rmSync(replaced, { recursive: true, force: true });
   }
 });
 
