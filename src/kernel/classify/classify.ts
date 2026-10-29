@@ -278,6 +278,26 @@ export function classify(outcome: ProcessOutcome, shapedStdout: string, shapedSt
     }
   }
 
+  // A program that needs a controlling terminal fails for an environment
+  // reason, not because the payload is wrong. Without this, the negative
+  // ledger records it as an approach dead end and pushes the model to change
+  // strategy instead of changing how it executes.
+  if (!semanticFailure && (outcome.processFailure !== null || (outcome.exit ?? 0) !== 0)) {
+    const ttyText = `${shapedStderr}\n${shapedStdout}`;
+    const ttyMarker = [
+      /not a tty/i,
+      /inappropriate ioctl for device/i,
+      /no tty present/i,
+      /must be run from a terminal/i,
+      /requires? a (?:terminal|tty)/i,
+      /stdin is not a terminal/i,
+    ].find((re) => re.test(ttyText));
+    if (ttyMarker) {
+      semanticFailure = 'tty-required';
+      semanticDetail = `tty-marker:${ttyMarker.source}`;
+    }
+  }
+
   const obs: Observation = {
     outcomeId: outcome.id,
     commandClass,

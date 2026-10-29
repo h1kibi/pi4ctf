@@ -206,9 +206,13 @@ classify(cmdClass, shaped) -> fields + semanticFailure
   "value": {"baseline":800,"probe":1200,"delta":400},
   "observationRefs": ["cmd-0021","cmd-0022"],
   "canonicalKey": "...",
+  "verifiedBy": "predicate",
   "status": "verified"
 }
 ```
+
+`verifiedBy` 区分证据来源：`predicate` 由内核确定性检查；`verifier` 由外部异族判断，
+必须带模型标识与 prompt 版本，二者在 packet 与统计中不得混同。
 
 **NegativeEntry**：死路。
 
@@ -216,7 +220,7 @@ classify(cmdClass, shaped) -> fields + semanticFailure
 {
   "signature": "...",
   "attempts": 3,
-  "failureClass": "timeout|nonzero-exit|no-output|schema-mismatch|probe-contradicted|client-blocked|server-error",
+  "failureClass": "timeout|nonzero-exit|no-output|schema-mismatch|probe-contradicted|client-blocked|server-error|tty-required",
   "transient": true,
   "expiresAt": "2026-10-27T12:30:00+08:00",
   "artifactRef": "...",

@@ -174,6 +174,8 @@ ROPgadget 7.7, checksec, patchelf, socat, nc, python3
    artifact、上限 4、EOF 清理）不变且经 rt 子进程 E2E 验证，但 pwn/rev 交互题需要真
    ConPTY/Unix PTY——随 Rust 移植交付。resize 目前记录但为 no-op。
 2. **异族 verifier 未接**：谓词 `check:"verifier"` 路径降级 `interpreted` 不产 Fact。
+   Fact 已记录 `verifiedBy`（`predicate` / `verifier`）和可选的 `verifier.model` /
+   `promptVersion`，接入时必须带这套元数据；当前所有 Fact 都是 `predicate`。
 3. **docker backend 需用户提供 pwn 镜像**；Kali 全量镜像仍带可复现性 gate，
    需在有 Docker 的机器上完成 `build-image.sh`（钉 digest → 双构建比对）。
 4. **async job（`run.async`/`job.*`）未实现**：不在第一交付清单，随 Rust 阶段补。

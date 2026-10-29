@@ -110,7 +110,7 @@ export function compilePacket(
   push(
     'facts',
     clip(
-      ['## Verified Facts', ...facts.map((f) => `- ${f.id} ${f.claimType} ${f.predicate} ${JSON.stringify(f.value).slice(0, 160)} @${f.observationRefs[0] ?? ''}${f.target ? ` target=${f.target}` : ''}`), hiddenSynthetic ? `- (${hiddenSynthetic} synthetic fact(s) hidden)` : '', hiddenLegacy ? `- (${hiddenLegacy} legacy/foreign-target fact(s) hidden)` : ''].filter(Boolean).join('\n') || '## Verified Facts\n(none)',
+      ['## Verified Facts', ...facts.map((f) => `- ${f.id} ${f.claimType} ${f.predicate} ${JSON.stringify(f.value).slice(0, 160)} @${f.observationRefs[0] ?? ''}${f.target ? ` target=${f.target}` : ''}${f.verifiedBy === 'verifier' ? ' [verifier]' : ''}`), hiddenSynthetic ? `- (${hiddenSynthetic} synthetic fact(s) hidden)` : '', hiddenLegacy ? `- (${hiddenLegacy} legacy/foreign-target fact(s) hidden)` : ''].filter(Boolean).join('\n') || '## Verified Facts\n(none)',
       BUDGETS.facts,
     ),
   );

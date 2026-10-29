@@ -253,6 +253,9 @@ export class ClaimVerifier {
         canonicalKey: ctx.outcomes[0]?.canonicalKey ?? '',
         target: claim.target ?? null,
         instanceId: claim.instanceId ?? null,
+        // The heterogeneous-verifier branch returns earlier (downgraded to
+        // interpreted), so every Fact minted today is code-checked.
+        verifiedBy: 'predicate' as const,
         status: 'verified' as const,
         synthetic: claim.synthetic === true,
         ts: Date.now(),

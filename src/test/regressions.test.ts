@@ -250,3 +250,40 @@ test('R8: signature keeps key=short-value literal, long value becomes payload', 
     ['curl', '-d', '<v:1>'],
   );
 });
+
+test('tty-required failure is an environment incident, not a route dead end', async () => {
+  const tp = makeProject();
+  try {
+    const res = await dispatch({
+      op: 'run',
+      root: tp.root,
+      input: { argv: ['bash', '-c', "echo 'Inappropriate ioctl for device' >&2; exit 1"] },
+    });
+    assert.equal(res.ok, true, JSON.stringify(res));
+    assert.equal(res.ok ? res.data.semanticFailure : '', 'tty-required');
+    const entry = new Ledger(tp.project).listNegatives().find((n) => n.failureClass === 'tty-required');
+    assert.ok(entry, 'the tty failure must be recorded');
+    assert.equal(entry?.family, 'environment');
+    assert.equal(entry?.transient, true);
+  } finally {
+    tp.cleanup();
+  }
+});
+
+test('plain nonzero exit still enters the approach family', async () => {
+  const tp = makeProject();
+  try {
+    const res = await dispatch({
+      op: 'run',
+      root: tp.root,
+      input: { argv: ['bash', '-c', 'exit 3'] },
+    });
+    assert.equal(res.ok, true, JSON.stringify(res));
+    assert.equal(res.ok ? res.data.semanticFailure : null, null);
+    const entry = new Ledger(tp.project).listNegatives().find((n) => n.failureClass === 'nonzero-exit');
+    assert.ok(entry, 'a plain nonzero exit still enters the ledger');
+    assert.equal(entry?.family, 'approach');
+  } finally {
+    tp.cleanup();
+  }
+});
