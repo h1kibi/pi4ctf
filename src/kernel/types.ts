@@ -178,11 +178,6 @@ export interface Fact {
   canonicalKey: string;
   target?: string | null;
   instanceId?: string | null;
-  /** Which mechanism minted this Fact. A deterministic predicate runs in the
-   *  kernel; a heterogeneous verifier is an external judgment and must never be
-   *  confused with code-checked evidence. Legacy facts default to predicate. */
-  verifiedBy?: 'predicate' | 'verifier';
-  verifier?: { model: string; promptVersion: string };
   status: 'verified';
   synthetic?: boolean;
   ts: number;

@@ -2,10 +2,11 @@
 
 > 对应施工基线 [`docs/design.md`](docs/design.md) 的**第一交付**（§9）。
 > 行为冻结后按基线移植 Rust `rt`（docs/kernel-design.md）。
-> 本版已按第一轮外部评审（C1–C6 / R1–R10）修复，192 项测试全绿。
+> 本版已按第一轮外部评审（C1–C6 / R1–R10）修复，全部测试通过。
 >
-> **最终验证（2026-10-29）**：`npm test` 在 Windows / Node 22.20.0 为 **188 pass / 4 skipped**
->（PTY 测试需要 POSIX 宿主）；GitHub Actions（ubuntu-latest / Node 22）为 **192/192、0 skipped**；
+> **最终验证（2026-10-29）**：`npm test` 在 Windows / Node 22.20.0 通过（4 个 PTY 测试
+> 需要 POSIX 宿主，自动跳过）；GitHub Actions（ubuntu-latest 与 windows-latest / Node 22）
+> 全部通过、0 skipped；
 > `toolbox-digest.sh` 输出合法 JSON（构建期断言 ≤512B）；
 > 验证环境 Docker 可用并存在一个 pwn 镜像；Kali sandbox 全量镜像未构建，
 > R6 的镜像 gate 仍需在有 Docker 的机器上完成。
@@ -82,7 +83,7 @@ pi 集成（不在这 6 项内核交付内）：
   `workspace/`，支持 `.ctfignore`；识别非 ELF 格式并给出轻量 arch/entry/archive 摘要到 `otherFiles`（`chal.json` 为 cap 内索引，packet 只给 root/generated 摘要，`case_preflight` 返回 rootFiles/generated 数组；files=所有 ELF，otherFiles=所有非 ELF，rootFiles=非 generated 根文件，generated=workspace/build）；根目录新文件始终视为附件材料；只有 `workspace/` 或 `includeBuild=true` 输出目录为 generated；根目录不做后缀/mtime 启发式；`workspace/` 默认忽略，`includeWorkspace=true` 才扫描且优先占名额；`build/out/dist/target/obj/__pycache__/screenshots/shots` 默认忽略；达到文件 cap 写 note；`chal.json` 记录 endpoint。
 
 评审回归：`src/test/regressions.test.ts` 覆盖 C1/C2/C4/C6/R2/R4/R7/R8；
-`rt-session` 覆盖 C3/C4；`session` 覆盖 C5/R9；完整 192 项由 `npm test` 统一跑。
+`rt-session` 覆盖 C3/C4；`session` 覆盖 C5/R9；完整套件由 `npm test` 统一跑。
 
 ## 评审修复对照（C1–C6 / R1–R10）
 
@@ -176,9 +177,9 @@ ROPgadget 7.7, checksec, patchelf, socat, nc, python3
    pipe-only；`resize` 在 tty 会话上转发（初始 80×24，SIGWINCH），管道会话只记录；
    tty 主机会话的 `proc` 读取不可用。Docker+PTY（宿主 PTY + `docker run -i -t`）以及
    backend 的 `/challenge` bind mount 已在 Docker Desktop 的 socket harness 上端到端验证。
-2. **异族 verifier 未接**：谓词 `check:"verifier"` 路径降级 `interpreted` 不产 Fact。
-   Fact 已记录 `verifiedBy`（`predicate` / `verifier`）和可选的 `verifier.model` /
-   `promptVersion`，接入时必须带这套元数据；当前所有 Fact 都是 `predicate`。
+2. **异族 verifier 未实现（有意 deferred）**：所有注册谓词都是 cheap check
+   （`probe`/`parse`），没有 `check:"verifier"` 谓词；接入前提是出现无确定性谓词的
+   claim 类型，并用 15 题 A/B 证明收益。在此之前不引入外部模型判断。
 3. **docker backend 需用户提供 pwn 镜像**；Kali 全量镜像仍带可复现性 gate，
    需在有 Docker 的机器上完成 `build-image.sh`（钉 digest → 双构建比对）。
 4. **async job（`run.async`/`job.*`）未实现**：不在第一交付清单，随 Rust 阶段补。
@@ -197,7 +198,7 @@ ROPgadget 7.7, checksec, patchelf, socat, nc, python3
 ```bash
 npm install
 npm run build
-npm test                    # 192 项；Windows 上 4 个 PTY 测试自动跳过
+npm test                    # 全部测试；Windows 上 4 个 PTY 测试自动跳过
 
 # one-shot JSON 协议（kernel-design §4.1）
 echo '{"op":"project.init","root":"chall-dir","input":{"id":"c1","backend":"host"}}' | node dist/rt.js

@@ -206,13 +206,9 @@ classify(cmdClass, shaped) -> fields + semanticFailure
   "value": {"baseline":800,"probe":1200,"delta":400},
   "observationRefs": ["cmd-0021","cmd-0022"],
   "canonicalKey": "...",
-  "verifiedBy": "predicate",
   "status": "verified"
 }
 ```
-
-`verifiedBy` 区分证据来源：`predicate` 由内核确定性检查；`verifier` 由外部异族判断，
-必须带模型标识与 prompt 版本，二者在 packet 与统计中不得混同。
 
 **NegativeEntry**：死路。
 
@@ -257,10 +253,10 @@ proposed -> checking -> accepted | rejected
 ```
 
 - 便宜谓词：内核同步判定；
-- 高风险/无谓词：异族 verifier；模型不能选验证强度；
+- 当前只注册 cheap predicate（`probe`/`parse`）；没有 `check:"verifier"` 谓词，异族
+  verifier **未接入**。接入前提：出现无确定性谓词的 claim 类型，且 15 题 A/B 证明收益；
 - `checking` 可异步；packet 显示 pending claims；
 - rejected → NegativeEntry；accepted → Fact；
-- verifier 超时降级为 `interpreted`，不产 Fact；
 - claim 只处理解释，不处理 observation；Observation 由 `run`/`session` 自动产出。
 
 ### 4.5 Flag

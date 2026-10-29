@@ -20,7 +20,7 @@ export interface PredicateSpec {
   id: string; // name@semver
   claimTypes: string[];
   requiredEvidence: ('outcome' | 'quote')[];
-  check: 'probe' | 'parse' | 'verifier';
+  check: 'probe' | 'parse';
   fixtureIds: string[];
 }
 
@@ -209,15 +209,6 @@ export class ClaimVerifier {
     claim.state = 'checking';
     this.ledger.saveClaim(claim);
 
-    // Hetero-verifier predicates are not available in the TS skeleton:
-    // downgrade to interpreted, produce no Fact (docs/design.md §4.4).
-    if (predicate.check === 'verifier') {
-      claim.state = 'interpreted';
-      this.ledger.saveClaim(claim);
-      this.project.appendEvent('claim.interpreted', 'kernel', { id: claim.id, predicate: predicate.id });
-      return claim;
-    }
-
     const ctx = this.loadContext(claim);
     const result = this.runPredicate(predicate, claim, ctx);
 
@@ -253,9 +244,6 @@ export class ClaimVerifier {
         canonicalKey: ctx.outcomes[0]?.canonicalKey ?? '',
         target: claim.target ?? null,
         instanceId: claim.instanceId ?? null,
-        // The heterogeneous-verifier branch returns earlier (downgraded to
-        // interpreted), so every Fact minted today is code-checked.
-        verifiedBy: 'predicate' as const,
         status: 'verified' as const,
         synthetic: claim.synthetic === true,
         ts: Date.now(),

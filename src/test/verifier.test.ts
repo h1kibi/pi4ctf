@@ -1,7 +1,5 @@
 /** Verifier tests: quote anchoring, differential predicate, downgrade. */
 import * as assert from 'node:assert/strict';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
 import { test } from 'node:test';
 import { Ledger } from '../kernel/ledger/store.js';
 import { ClaimVerifier } from '../kernel/claim/verifier.js';
@@ -9,25 +7,6 @@ import { runExec } from '../kernel/run/exec.js';
 import { makeProject } from './helpers.js';
 
 const NODE = process.execPath;
-
-test('legacy facts without provenance read as predicate-verified', () => {
-  const tp = makeProject();
-  try {
-    const dir = path.join(tp.project.ctfDir, 'facts');
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, 'f9001.json'), JSON.stringify({
-      id: 'f9001', claimId: 'c9001', claimType: 'observed',
-      predicate: 'process.exit-zero@1.0.0', classifiedBy: 'classify@1',
-      value: {}, observationRefs: [], artifactHashes: {}, canonicalKey: '',
-      status: 'verified', ts: Date.now(),
-    }));
-    const ledger = new Ledger(tp.project);
-    assert.equal(ledger.listFacts().find((f) => f.id === 'f9001')?.verifiedBy, 'predicate');
-    assert.equal(ledger.getFact('f9001').verifiedBy, 'predicate');
-  } finally {
-    tp.cleanup();
-  }
-});
 
 test('quote must equal shaped[start:end]; mismatch rejected at submit', async () => {
   const tp = makeProject();
@@ -68,7 +47,6 @@ test('interpreted claim: valid quotes + clean outcome -> accepted -> Fact', asyn
     assert.equal(facts.length, 1);
     assert.equal(facts[0]?.claimId, claim.id);
     assert.equal(facts[0]?.predicate, 'output.contains@1.0.0');
-    assert.equal(facts[0]?.verifiedBy, 'predicate');
   } finally {
     tp.cleanup();
   }

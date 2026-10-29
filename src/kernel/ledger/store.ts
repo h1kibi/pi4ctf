@@ -151,15 +151,13 @@ export class Ledger {
   }
 
   listFacts(): Fact[] {
-    return this.listDir<Fact>('facts')
-      .map((fact) => ({ ...fact, verifiedBy: fact.verifiedBy ?? 'predicate' }));
+    return this.listDir<Fact>('facts');
   }
 
   getFact(id: string): Fact {
     const p = path.join(this.project.ctfDir, `facts/${id}.json`);
     if (!fs.existsSync(p)) throw new KernelError('NOT_FOUND', `fact ${id} not found`);
-    const fact = readJson<Fact>(p);
-    return { ...fact, verifiedBy: fact.verifiedBy ?? 'predicate' };
+    return readJson<Fact>(p);
   }
 
   // -- negative ledger ------------------------------------------------------
