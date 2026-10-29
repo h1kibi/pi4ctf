@@ -142,12 +142,11 @@ export const caseConfigureTool = defineTool({
   name: "case_configure",
   label: "CTF configure project",
   description:
-    "Update flagFormat, oracleRef, backend, dockerImage, and/or target, then pin the current oracle file contents. Validates target reachability and oracle binding. Use to repair a wrong flagFormat, adopt an externally supplied oracle, or move a case between host/docker/target without re-initializing.",
+    "Repair flagFormat, oracleRef, dockerImage, and/or target, then pin the current oracle file contents. Validates target reachability and oracle binding. Backend and allowedHosts are user decisions; use /ctf configure for those.",
   parameters: Type.Object({
     flagFormat: Type.Optional(Type.String({ description: "Regex; omit to keep current" })),
     oracleRef: Type.Optional(Type.String({ description: "Relative oracle path; omit to keep current" })),
-    backend: Type.Optional(Type.Union([Type.Literal("host"), Type.Literal("docker")], { description: "Execution backend; omit to keep current" })),
-    dockerImage: Type.Optional(Type.String({ description: "Docker image; required when switching to docker" })),
+    dockerImage: Type.Optional(Type.String({ description: "Docker image; only applies when the case already uses docker" })),
     target: Type.Optional(Type.Union([
       Type.String({ description: "host[:port] or URL" }),
       Type.Object({
@@ -158,7 +157,6 @@ export const caseConfigureTool = defineTool({
         url: Type.Optional(Type.String()),
       }),
     ])),
-    allowedHosts: Type.Optional(Type.Array(Type.String(), { description: "Replace allowedHosts patterns; loopback is always allowed" })),
     targetTimeoutMs: Type.Optional(Type.Number({ description: "Target TCP check timeout 100-30000ms; default 2000" })),
     root: RootParam,
   }),
@@ -168,10 +166,8 @@ export const caseConfigureTool = defineTool({
       const res = await callRt("case.configure", root, {
         flagFormat: params.flagFormat,
         oracleRef: params.oracleRef,
-        backend: params.backend,
         dockerImage: params.dockerImage,
         target: params.target,
-        allowedHosts: params.allowedHosts,
         targetTimeoutMs: params.targetTimeoutMs,
       });
       if (res.ok) await refreshPreflight(ctx, root, true);

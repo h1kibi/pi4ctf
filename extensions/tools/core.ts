@@ -16,15 +16,14 @@ export const ctfInitTool = defineTool({
     "Use ctf_init only when there is no .ctf/project.json; otherwise use case_configure.",
     "Put the oracle outside the challenge workspace and before init; an oracle created later is not trusted.",
     "For Java/web challenges, pass category web/rev and a dockerImage with the matching JDK when needed.",
+    "Backend and scope are user decisions: provide dockerImage to initialize with Docker; omit it for host. Use /ctf init for an explicit backend or allowedHosts choice.",
   ],
   parameters: Type.Object({
     flagFormat: Type.Optional(Type.String({ description: "Flag regex; defaults to the generic CTF shape" })),
     oracleRef: Type.Optional(Type.String({ description: "Relative oracle path outside the challenge root; default ../oracle.json" })),
-    backend: Type.Optional(Type.Union([Type.Literal("host"), Type.Literal("docker")], { description: "Execution backend; default host" })),
     category: Type.Optional(Type.String({ description: "pwn/web/crypto/rev/forensics/misc; default misc" })),
-    dockerImage: Type.Optional(Type.String({ description: "Docker image; required for docker unless PI4CTF_DOCKER_IMAGE is set" })),
+    dockerImage: Type.Optional(Type.String({ description: "Docker image; providing it selects the docker backend" })),
     target: Type.Optional(Type.String({ description: "host[:port] or URL" })),
-    allowedHosts: Type.Optional(Type.Array(Type.String(), { description: "allowedHosts patterns; loopback is always allowed; default *" })),
     root: RootParam,
   }),
   async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -33,11 +32,8 @@ export const ctfInitTool = defineTool({
       if (fs.existsSync(path.join(root, ".ctf", "project.json"))) {
         throw new Error(`project already exists at ${root}; use case_configure`);
       }
-      const backend = params.backend ?? "host";
       const dockerImage = params.dockerImage ?? process.env.PI4CTF_DOCKER_IMAGE ?? process.env.PI4CTF_PWN_IMAGE;
-      if (backend === "docker" && !dockerImage) {
-        throw new Error("ctf_init backend=docker requires dockerImage (or PI4CTF_DOCKER_IMAGE)");
-      }
+      const backend = dockerImage ? "docker" : "host";
       const oracleRef = params.oracleRef ?? "../oracle.json";
       const res = await callRt("project.init", root, {
         id: path.basename(root) || "ctf",
@@ -49,7 +45,6 @@ export const ctfInitTool = defineTool({
         dockerImage: backend === "docker" ? dockerImage : undefined,
         target: params.target,
         oracleRef,
-        allowedHosts: params.allowedHosts?.length ? params.allowedHosts : ["*"],
       });
       if (res.ok) {
         const oraclePath = path.resolve(root, oracleRef);
