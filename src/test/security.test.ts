@@ -249,6 +249,63 @@ test('case.restart resets command budget; case.close blocks runs', async () => {
   }
 });
 
+test('case.continue resets command budget beyond restart cap without clearing negatives', async () => {
+  const tp = makeProject();
+  try {
+    const first = await dispatch({
+      op: 'run',
+      root: tp.root,
+      input: { argv: [NODE, '-e', 'console.log("before continue")'] },
+    });
+    assert.equal(first.ok, true);
+    const oldId = first.ok && typeof first.data.id === 'string' ? first.data.id : '';
+    const ledger = new Ledger(tp.project);
+    ledger.addNegative({
+      signature: 'generic|signature@1:continue-test',
+      failureClass: 'timeout',
+      transient: true,
+      condemnedBy: null,
+      unblockOn: 'ttl',
+      expiresAt: Date.now() + 60_000,
+      blockScope: 'route',
+      artifactRef: null,
+      route: null,
+    });
+    const file = tp.project.file();
+    fs.writeFileSync(
+      path.join(tp.root, '.ctf', 'project.json'),
+      JSON.stringify({ ...file, counters: { ...file.counters, command: 30, restart: 3 } }, null, 2),
+    );
+
+    const cont = await dispatch({ op: 'case.continue', root: tp.root });
+    assert.equal(cont.ok, true, JSON.stringify(cont));
+    const previousCommand = cont.ok && typeof cont.data.previousCommand === 'number' ? cont.data.previousCommand : null;
+    const command = cont.ok && typeof cont.data.command === 'number' ? cont.data.command : null;
+    const continuation = cont.ok && typeof cont.data.continuation === 'number' ? cont.data.continuation : null;
+    assert.equal(previousCommand, 30);
+    assert.equal(command, 0);
+    assert.equal(continuation, 1);
+    const after = tp.project.file();
+    assert.equal(after.counters.command, 0);
+    assert.equal(after.counters.restart, 3);
+    assert.equal(after.counters.continuation, 1);
+    assert.equal(new Ledger(tp.project).listNegatives().length, 1);
+
+    const second = await dispatch({
+      op: 'run',
+      root: tp.root,
+      input: { argv: [NODE, '-e', 'console.log("after continue")'] },
+    });
+    assert.equal(second.ok, true);
+    const newId = second.ok && typeof second.data.id === 'string' ? second.data.id : '';
+    assert.notEqual(newId, oldId);
+    const events = fs.readFileSync(path.join(tp.root, '.ctf', 'events.jsonl'), 'utf8');
+    assert.match(events, /case\.continue/);
+  } finally {
+    tp.cleanup();
+  }
+});
+
 test('restart resets budget but never reuses command ids', async () => {
   const tp = makeProject();
   try {

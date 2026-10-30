@@ -465,6 +465,24 @@ export class Project {
     return { restarts: restarts + 1, command: 0 };
   }
 
+  /** Human operator override: start a fresh command budget without consuming
+   *  the model's restart cap or clearing negative memory. Audited. */
+  continueCase(): { previousCommand: number; command: number; continuation: number } {
+    let previousCommand = 0;
+    let continuation = 0;
+    this.mutateFile((file) => {
+      if (file.status !== 'active') {
+        throw new KernelError('CONFLICT', `case is ${file.status}; continue requires an active case`);
+      }
+      previousCommand = file.counters.command ?? 0;
+      continuation = (file.counters.continuation ?? 0) + 1;
+      file.counters.command = 0;
+      file.counters.continuation = continuation;
+    });
+    this.appendEvent('case.continue', 'human', { previousCommand, command: 0, continuation });
+    return { previousCommand, command: 0, continuation };
+  }
+
   /** Count an automatic target reset attempt; the cap is enforced by the
    *  caller so a failed reset is audited rather than silently retried. */
   recordTargetReset(): number {
