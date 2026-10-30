@@ -126,6 +126,7 @@ test('E2E: init -> run baseline/probe -> claim differential -> flag -> complete'
     // -- case context: packet carries fact + untrusted observations
     const ctx = await dispatch({ op: 'case.context', root });
     assert.equal(ctx.ok, true);
+    assert.equal(ctx.ok ? ctx.data.integrity : null, 'ok');
     const packet = ctx.ok ? String(ctx.data.packet) : '';
     assert.match(packet, /## Verified Facts[\s\S]*http\.length_delta@1\.0\.0/);
     assert.match(packet, /<UNTRUSTED_DATA>/);

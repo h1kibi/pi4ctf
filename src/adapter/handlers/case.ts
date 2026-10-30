@@ -278,7 +278,13 @@ export async function handleCase(req: Request, op: string, input: Record<string,
       const project = needRoot(req);
       const seen = Array.isArray(input.seenOutcomes) ? (input.seenOutcomes as unknown[]).map(String) : [];
       const packet = compilePacket(project, new Ledger(project), { excludeOutcomeIds: seen, envSummary: envSummary(envContextOf(project)) });
-      return ok(op, { packet: packet.text, stats: packet.stats, outcomeIds: packet.outcomeIds });
+      return ok(op, {
+        packet: packet.text,
+        stats: packet.stats,
+        outcomeIds: packet.outcomeIds,
+        integrity: packet.integrity,
+        issues: packet.issues,
+      });
     }
     case 'artifact.ingest': {
       const project = needRoot(req);
@@ -295,7 +301,12 @@ export async function handleCase(req: Request, op: string, input: Record<string,
     case 'case.handoff': {
       const project = needRoot(req);
       const { progressPath, packet } = writeHandoff(project, new Ledger(project), { envSummary: envSummary(envContextOf(project)) });
-      return ok(op, { progressPath, packetBytes: packet.stats.totalBytes });
+      return ok(op, {
+        progressPath,
+        packetBytes: packet.stats.totalBytes,
+        integrity: packet.integrity,
+        issues: packet.issues,
+      });
     }
     case 'case.complete': {
       const project = needRoot(req);

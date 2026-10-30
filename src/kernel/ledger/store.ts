@@ -18,6 +18,15 @@ import type {
   ProcessOutcome,
 } from '../types.js';
 
+export interface PacketState {
+  outcomes: ProcessOutcome[];
+  claims: Claim[];
+  facts: Fact[];
+  negatives: NegativeEntry[];
+  recent: ProcessOutcome[];
+  issues: string[];
+}
+
 export class Ledger {
   constructor(private readonly project: Project) {}
 
@@ -174,6 +183,44 @@ export class Ledger {
       .filter((n) => !(n.transient && n.signature.startsWith('exec-local|')));
   }
 
+  /** Packet-only snapshot: unreadable rows are reported, not skipped silently.
+   *  Claim and flag paths keep using the fail-fast list methods. */
+  packetState(limit = 5): PacketState {
+    const outcomeResult = this.listDirWithIssues<ProcessOutcome>('outcomes');
+    outcomeResult.items.sort((a, b) => (a.ts - b.ts) || a.id.localeCompare(b.id));
+    const claimResult = this.listDirWithIssues<Claim>('claims');
+    const factResult = this.listDirWithIssues<Fact>('facts');
+    const negativeResult = this.listDirWithIssues<NegativeEntry>('negatives');
+    const claims = claimResult.items.filter((c) => c.state === 'proposed' || c.state === 'checking');
+    const negatives = negativeResult.items.filter((n) => !(n.transient && n.signature.startsWith('exec-local|')));
+    const exempt = new Set<string>();
+    for (const claim of claims) {
+      for (const ref of claim.refs) {
+        exempt.add(ref);
+        exempt.add(ref.split('.')[0]);
+      }
+    }
+    const seen = new Set<string>();
+    const recent: ProcessOutcome[] = [];
+    for (const o of [...outcomeResult.items].reverse()) {
+      if (exempt.has(o.id)) {
+        recent.push(o);
+        continue;
+      }
+      if (seen.has(o.canonicalKey)) continue;
+      seen.add(o.canonicalKey);
+      recent.push(o);
+    }
+    return {
+      outcomes: outcomeResult.items,
+      claims,
+      facts: factResult.items,
+      negatives,
+      recent: recent.slice(0, limit),
+      issues: [...outcomeResult.issues, ...claimResult.issues, ...factResult.issues, ...negativeResult.issues],
+    };
+  }
+
   /** Record/upsert a negative entry. failureClass is code-owned. Upsert is
    *  keyed by signature: attempts increment, latest class wins. */
   addNegative(entry: Omit<NegativeEntry, 'attempts' | 'lastAttemptAt' | 'id'> & { attempts?: number; id?: string }): NegativeEntry {
@@ -297,6 +344,25 @@ export class Ledger {
       out.push(o);
     }
     return out.slice(0, limit);
+  }
+
+  private listDirWithIssues<T>(dir: string): { items: T[]; issues: string[] } {
+    const abs = path.join(this.project.ctfDir, dir);
+    if (!fs.existsSync(abs)) return { items: [], issues: [] };
+    const names = fs
+      .readdirSync(abs)
+      .filter((n) => n.endsWith('.json'))
+      .sort();
+    const items: T[] = [];
+    const issues: string[] = [];
+    for (const name of names) {
+      try {
+        items.push(readJson<T>(path.join(abs, name)));
+      } catch {
+        issues.push(`unreadable json: ${dir}/${name}`);
+      }
+    }
+    return { items, issues };
   }
 
   private listDir<T>(dir: string): T[] {

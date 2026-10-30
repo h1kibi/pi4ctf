@@ -27,6 +27,7 @@ const BUDGETS = {
   outcome: 2 * 1024, // per outcome
   budget: 512,
   env: 820,
+  integrity: 512,
 } as const;
 
 export interface PacketStats {
@@ -39,6 +40,8 @@ export interface Packet {
   stats: PacketStats;
   /** Outcome ids included in the recent block (for delta-aware injection). */
   outcomeIds: string[];
+  integrity: 'ok' | 'degraded';
+  issues: string[];
 }
 
 /** Byte-aware clip (review Optional): budgets are UTF-8 bytes, so a CJK-heavy
@@ -99,7 +102,23 @@ export function compilePacket(
   }
 
   // -- Verified Facts digest (never dropped) --------------------------------
-  const allFacts = ledger.listFacts();
+  const state = ledger.packetState();
+  if (state.issues.length > 0) {
+    push(
+      'integrity',
+      clip(
+        [
+          '## Packet integrity',
+          '- status: degraded',
+          '- unreadable state:',
+          ...state.issues.slice(0, 6).map((issue) => `  - ${issue}`),
+          ...(state.issues.length > 6 ? [`  - ... ${state.issues.length - 6} more`] : []),
+        ].join('\n'),
+        BUDGETS.integrity,
+      ),
+    );
+  }
+  const allFacts = state.facts;
   const currentTarget = file.target ? targetRef(file.target) : null;
   const facts = allFacts.filter((f) =>
     f.synthetic !== true &&
@@ -116,14 +135,14 @@ export function compilePacket(
   );
 
   // -- Open claims -----------------------------------------------------------
-  const open = ledger.openClaims();
+  const open = state.claims;
   const claimLine = (c: Claim) =>
     `- ${c.id} [${c.state}] ${c.claimType}: ${c.text.slice(0, 120)} refs=${c.refs.join(',')}`;
   const claimsBody = clip(['## Open claims', ...open.map(claimLine)].join('\n') || '## Open claims\n(none)', BUDGETS.claims);
   push('claims', claimsBody);
 
   // -- Negative ledger (minimal; never dropped) ------------------------------
-  const negs = ledger.listNegatives();
+  const negs = state.negatives;
   const environmentNegatives = negs.filter((n) => n.family === 'environment');
   const routeNegatives = negs.filter((n) => n.family !== 'environment');
   const negLine = (n: NegativeEntry) => {
@@ -159,7 +178,7 @@ export function compilePacket(
 
   // -- Recent outcomes (droppable: oldest first) ------------------------------
   const excluded = new Set(opts?.excludeOutcomeIds ?? []);
-  let recent = ledger.recentOutcomes(5).filter((o) => !excluded.has(o.id));
+  let recent = state.recent.filter((o) => !excluded.has(o.id));
   const fmtOutcome = (o: ProcessOutcome) => {
     const itemLines: string[] = [];
     for (const id of (o.items?.ids ?? []).slice(0, 3)) {
@@ -224,18 +243,25 @@ export function compilePacket(
   const text = parts.filter((p) => p.length > 0).join('\n\n');
   const totalBytes = Buffer.byteLength(text);
   const included = recent.slice(0, recent.length - droppedOutcomes);
-  return { text, stats: { totalBytes, sections }, outcomeIds: included.map((o) => o.id) };
+  return {
+    text,
+    stats: { totalBytes, sections },
+    outcomeIds: included.map((o) => o.id),
+    integrity: state.issues.length ? 'degraded' : 'ok',
+    issues: state.issues,
+  };
 }
 
 /** handoff = packet + resume pointer (docs/design.md §4.3). */
 export function writeHandoff(project: Project, ledger: Ledger, opts?: { envSummary?: string }): { progressPath: string; packet: Packet } {
   const packet = compilePacket(project, ledger, opts);
   const file = project.file();
-  const open = ledger.openClaims();
+  const state = ledger.packetState();
+  const open = state.claims;
   const resume = {
     counters: file.counters,
     openClaims: open.map((c) => c.id),
-    lastOutcome: ledger.listOutcomes().slice(-1)[0]?.id ?? null,
+    lastOutcome: state.outcomes.at(-1)?.id ?? null,
     plan: project.readPlan(),
     ts: Date.now(),
   };

@@ -385,6 +385,12 @@ test('doctor reports corrupt state JSON; listFacts stops skipping it', async () 
     const res = await dispatch({ op: 'case.doctor', root: tp.root });
     assert.equal(res.ok, true);
     assert.match(JSON.stringify(res), /unreadable json: facts\/f9999\.json/);
+    const ctx = await dispatch({ op: 'case.context', root: tp.root });
+    assert.equal(ctx.ok, true);
+    assert.equal(ctx.ok ? ctx.data.integrity : '', 'degraded');
+    const packet = ctx.ok ? String(ctx.data.packet) : '';
+    assert.match(packet, /## Packet integrity/);
+    assert.match(packet, /unreadable json: facts\/f9999\.json/);
     assert.throws(() => new Ledger(tp.project).listFacts(), /cannot read .*f9999\.json/);
   } finally {
     tp.cleanup();
