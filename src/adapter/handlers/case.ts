@@ -10,7 +10,7 @@ import { readProcess, type ProcAction } from '../../kernel/proc/proc.js';
 import { parseTarget } from '../../kernel/target.js';
 import { recordSolve } from '../../kernel/stats.js';
 import { DEFAULT_FLAG_FORMAT } from '../../kernel/flag/format.js';
-import { assertCaseBudget } from '../policy.js';
+import { assertCaseBudget } from '../../kernel/budget.js';
 import { checkTargetScope, scanInjection, wrapUntrusted } from '../../kernel/security.js';
 import { envSummary } from '../../providers/env/summary.js';
 import { envContextOf } from '../../providers/env/context.js';

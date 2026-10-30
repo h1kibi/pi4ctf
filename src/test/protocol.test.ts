@@ -42,9 +42,14 @@ function rootDir(): string {
 test('E2E: init -> run baseline/probe -> claim differential -> flag -> complete', async () => {
   const root = rootDir();
   const oraclePath = path.join(os.tmpdir(), `oracle-${path.basename(root)}.json`);
+  const target = { host: '127.0.0.1', port };
   fs.writeFileSync(
     oraclePath,
-    JSON.stringify({ flagSha256: crypto.createHash('sha256').update(FLAG).digest('hex') }),
+    JSON.stringify({
+      flagSha256: crypto.createHash('sha256').update(FLAG).digest('hex'),
+      target,
+      expiresAt: Date.now() + 24 * 60 * 60 * 1000,
+    }),
   );
   try {
     // -- case init (internal API)
@@ -58,6 +63,7 @@ test('E2E: init -> run baseline/probe -> claim differential -> flag -> complete'
         category: 'web',
         flagFormat: 'flag\\{[^}]+\\}',
         backend: 'host',
+        target,
         oracleRef: path.relative(root, oraclePath),
         allowedHosts: ['127.0.0.1'],
       },

@@ -16,7 +16,7 @@ import { handleRun } from './handlers/run.js';
 import type { Request, Response } from './types.js';
 
 export type { OkResponse, Request, Response } from './types.js';
-export { assertCaseBudget } from './policy.js';
+export { assertCaseBudget } from '../kernel/budget.js';
 
 export async function dispatch(req: Request): Promise<Response> {
   try {

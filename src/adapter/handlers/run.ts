@@ -6,7 +6,8 @@ import { checkRunScope, checkTargetScope, scanInjection } from '../../kernel/sec
 import { isLoopbackHost, parseTarget, targetFromEnv } from '../../kernel/target.js';
 import { signature, routeSignature } from '../../kernel/shape/signature.js';
 import { negativeSpecFor } from '../../kernel/negative.js';
-import { assertCaseBudget, reachabilityWithRecovery } from '../policy.js';
+import { assertCaseBudget } from '../../kernel/budget.js';
+import { reachabilityWithRecovery } from '../policy.js';
 import type { Request, Response } from '../types.js';
 import { argvOf, needRoot, ok } from '../helpers.js';
 

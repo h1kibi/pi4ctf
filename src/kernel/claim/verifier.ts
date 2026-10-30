@@ -376,6 +376,24 @@ export class ClaimVerifier {
    *  aside) against the same target, ok statuses, and a length delta >=
    *  threshold (review R2 — unrelated commands must not fabricate a Fact). */
   private checkLengthDelta(ctx: VerifyContext): PredicateResult {
+    const rawTargets = ctx.outcomes.map((o) => o.target ?? '');
+    if (rawTargets.some(Boolean)) {
+      const wanted = targetRef(this.project.file().target);
+      if (!wanted) {
+        return {
+          verdict: 'rejected',
+          reason: 'differential evidence has a target but the project has no declared target',
+          value: { targets: rawTargets.slice(0, 4) },
+        };
+      }
+      if (rawTargets.some((t) => t === '') || new Set(rawTargets).size !== 1 || rawTargets[0] !== wanted) {
+        return {
+          verdict: 'rejected',
+          reason: `differential target must match project target ${wanted}; got ${rawTargets.map((t) => t || '(empty)').join(', ')}`,
+          value: { targets: rawTargets.slice(0, 4), expected: wanted },
+        };
+      }
+    }
     if (ctx.items.length > 0) {
       if (ctx.items.length < 2) {
         return { verdict: 'rejected', reason: 'differential needs >=2 item refs (baseline + probe)', value: {} };
