@@ -147,7 +147,7 @@ classify(cmdClass, shaped) -> fields + semanticFailure
 - `shape@1` 去 ANSI、折叠重复、保留错误/命中行；
 - `signature@1` 含 `<v:n>` 载荷槽；
 - `canonicalKey = commandClass + signature@1 + shapedHash`；
-- differential / time-based 两条腿豁免合并；
+- differential 两条腿豁免合并；
 - 去重只作用于 packet/recent 与计数，不删 store 行；
 - `classify` 是 capability 的函数属性，不是运行时注册表；
 - 危险状态码（5xx/403/429/WAF）由内核状态码表判定，模型不能放宽。
@@ -369,7 +369,7 @@ proposed -> checking -> accepted | rejected
 10. forensics binwalk/strings carving；
 11. web SSTI `{{7*7}}` 差分；
 12. web JWT alg=none/弱密钥；
-13. web 盲命令注入 time-based；
+13. web 盲命令注入；
 14. crypto XOR crib drag；
 15. crypto ECDSA nonce 复用；
 16. pwn ret2libc；

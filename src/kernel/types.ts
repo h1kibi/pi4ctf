@@ -146,7 +146,7 @@ export interface ProbeSpec {
 
 export interface Claim {
   id: string; // c0001
-  claimType: string; // observed | interpreted | differential | time-based | exploit | cred | flag
+  claimType: string; // observed | interpreted | differential | exploit | cred | flag
   text: string;
   quotes: Quote[];
   refs: string[]; // cmd-0001 or cmd-0001.0003

@@ -40,11 +40,6 @@ export const PREDICATES: Record<string, PredicateSpec> = {
     claimTypes: ['differential'],
     requiredEvidence: ['outcome'],
   },
-  'time.delta@1.0.0': {
-    id: 'time.delta@1.0.0',
-    claimTypes: ['time-based'],
-    requiredEvidence: ['outcome'],
-  },
 };
 
 /** claimType -> default predicate. Claims cannot pick a predicate the
@@ -57,7 +52,6 @@ export function defaultPredicateFor(claimType: string): PredicateSpec {
 }
 
 const LEN_DELTA_THRESHOLD = 0.1; // frozen threshold
-const TIME_DELTA_FACTOR = 2.0; // frozen by fixtures/predicates/time-delta
 
 export interface VerifyContext {
   outcomes: ProcessOutcome[];
@@ -209,19 +203,6 @@ export class ClaimVerifier {
     const result = this.runPredicate(predicate, claim, ctx);
 
     if (result.verdict === 'accepted') {
-      // Timing is a statistical signal, not a code-owned causal proof. Keep
-      // the claim as exploration evidence and never let it mint a Fact or
-      // satisfy the flag evidence layer.
-      if (predicate.id === 'time.delta@1.0.0') {
-        claim.state = 'interpreted';
-        this.ledger.saveClaim(claim);
-        this.project.appendEvent('claim.interpreted', 'kernel', {
-          id: claim.id,
-          predicate: predicate.id,
-          reason: 'time-based evidence is not a Fact',
-        });
-        return claim;
-      }
       const scriptDeclared = claim.refs.some((r) => {
         const e = this.ledger.getEvidence(r);
         return e.kind === 'item' && e.item?.provenance === 'script-declared';
@@ -316,16 +297,14 @@ export class ClaimVerifier {
         return this.checkContains(claim, ctx);
       case 'http.length_delta@1.0.0':
         return this.checkLengthDelta(ctx);
-      case 'time.delta@1.0.0':
-        return this.checkTimeDelta(ctx);
       default:
         throw new KernelError('INTERNAL', `predicate has no impl: ${spec.id}`);
     }
   }
 
   /** All referenced outcomes must share one argvTemplate (payload slots are
-   *  already normalized away by signature@1) — a differential/time-based
-   *  claim over two different commands is fabricated evidence (review R2). */
+   *  already normalized away by signature@1) — a differential claim
+   *  over two different commands is fabricated evidence (review R2). */
   private requireSameTemplate(ctx: VerifyContext): PredicateResult | null {
     const templates = new Set(ctx.outcomes.map((o) => o.argvTemplate.join(' ')));
     if (templates.size > 1) {
@@ -455,60 +434,4 @@ export class ClaimVerifier {
     return { verdict: 'accepted', reason: `length delta ratio ${ratio.toFixed(4)} >= ${LEN_DELTA_THRESHOLD}`, value };
   }
 
-  /** time-based: same template and one non-empty target, an even number of
-   *  clean runs (>=6, equal legs), median duration ratio >= 2x. */
-  private checkTimeDelta(ctx: VerifyContext): PredicateResult {
-    if (ctx.outcomes.length < 6 || ctx.outcomes.length % 2 !== 0) {
-      return {
-        verdict: 'rejected',
-        reason: `time-based needs an even number of refs >=6; got ${ctx.outcomes.length}`,
-        value: {},
-      };
-    }
-    const templateMismatch = this.requireSameTemplate(ctx);
-    if (templateMismatch) return templateMismatch;
-    const wanted = targetRef(this.project.file().target);
-    if (!wanted) {
-      return {
-        verdict: 'rejected',
-        reason: 'time-based needs a declared project target',
-        value: {},
-      };
-    }
-    const targets = new Set(ctx.outcomes.map((o) => o.target ?? ''));
-    if (targets.size !== 1 || !targets.has(wanted)) {
-      return {
-        verdict: 'rejected',
-        reason: `time-based target must match project target ${wanted}; got ${[...targets].map((t) => t || '(empty)').join(', ')}`,
-        value: { targets: [...targets].slice(0, 4), expected: wanted },
-      };
-    }
-    for (const o of ctx.outcomes) {
-      const obs = ctx.observations.get(o.id);
-      if (o.processFailure) {
-        return { verdict: 'rejected', reason: `${o.id} processFailure=${o.processFailure}`, value: {} };
-      }
-      if (obs?.semanticFailure) {
-        return { verdict: 'rejected', reason: `${o.id} semanticFailure=${obs.semanticFailure}`, value: {} };
-      }
-      const status = obs?.parsed['http.status']?.value;
-      if (typeof status === 'number' && status >= 400) {
-        return { verdict: 'rejected', reason: `${o.id} http.status=${status}`, value: {} };
-      }
-    }
-    const half = ctx.outcomes.length / 2;
-    const baseline = median(ctx.outcomes.slice(0, half).map((o) => o.durationMs));
-    const probe = median(ctx.outcomes.slice(half).map((o) => o.durationMs));
-    const value = { baselineMs: baseline, probeMs: probe, factor: baseline === 0 ? Infinity : Number((probe / baseline).toFixed(3)) };
-    if (baseline === 0 || probe / baseline < TIME_DELTA_FACTOR) {
-      return { verdict: 'rejected', reason: `time factor ${value.factor} < ${TIME_DELTA_FACTOR}`, value };
-    }
-    return { verdict: 'accepted', reason: `time factor ${value.factor} >= ${TIME_DELTA_FACTOR}`, value };
-  }
-}
-
-function median(values: number[]): number {
-  const sorted = [...values].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 1 ? sorted[mid] : Math.round((sorted[mid - 1] + sorted[mid]) / 2);
 }

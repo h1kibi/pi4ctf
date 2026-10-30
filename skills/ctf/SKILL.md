@@ -150,7 +150,7 @@ Default to one probe per decision. Use a `probes` batch only for a matrix of rel
 
 A claim needs:
 
-- `claimType`: `observed`, `interpreted`, `differential`, or `time-based`;
+- `claimType`: `observed`, `interpreted`, or `differential`;
 - `text`: one falsifiable sentence;
 - `quotes`: exact `{shapedRef, text}` or `{shapedRef, span:{start,end}, text}` from a shaped artifact; `shapedRef` is `.ctf`-relative, e.g. `artifacts/cmd-0001.stdout.shaped.log` (an outcome id like `cmd-0001` is not a shapedRef); omit span to let the kernel locate a unique substring;
 - `refs`: ProcessOutcome ids;
@@ -160,7 +160,6 @@ The kernel checks `text == shaped[start:end]`. If it rejects, do not resubmit th
 signature; produce new evidence.
 
 Use `differential` only for two legs of the same command template against the same target. If the evidence carries a target, it must be the project's declared target; local-only evidence may omit target.
-Use `time-based` only with an even number (>=6) of clean runs of the same template against the project's declared target; at least 3 baseline + 3 probe runs. A project without a declared target cannot use `time-based`. A successful timing claim is interpreted evidence, not a Fact, and cannot satisfy the flag evidence layer.
 
 ## session rules
 

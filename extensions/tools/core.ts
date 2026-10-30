@@ -245,11 +245,11 @@ export const claimTool = defineTool({
   promptSnippet: "Submit a quote-anchored claim for kernel verification",
   promptGuidelines: [
     "Never submit a claim without a quote from a real artifact.",
-    "Use claimType observed/interpreted/differential/time-based.",
+    "Use claimType observed/interpreted/differential.",
     "If the kernel rejects, read the reason and submit new evidence; do not repeat the same signature.",
   ],
   parameters: Type.Object({
-    claimType: Type.String({ description: "observed | interpreted | differential | time-based" }),
+    claimType: Type.String({ description: "observed | interpreted | differential" }),
     text: Type.String({ description: "Claim text, <=2KB" }),
     quotes: Type.Array(
       Type.Object({

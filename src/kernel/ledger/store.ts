@@ -320,8 +320,8 @@ export class Ledger {
   }
 
   /** Recent outcomes for the packet: newest first, deduped by canonicalKey
-   *  except legs referenced by open claims (differential/time-based
-   *  exemption, docs/design.md §4.1). */
+   *  except legs referenced by open claims (differential exemption,
+   *  docs/design.md §4.1). */
   recentOutcomes(limit: number): ProcessOutcome[] {
     const exempt = new Set<string>();
     for (const claim of this.openClaims()) {

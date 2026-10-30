@@ -24,7 +24,10 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { atomicWriteFile, FileLock, readJson, readJsonIfExists, rootIdentity, sha256 } from './fsutil.js';
 import { KernelError } from './error.js';
-import { MAX_CASE_RESTARTS, TURN_BUDGET } from './types.js';
+import { MAX_CASE_RESTARTS } from './types.js';
+import { allocateCommand } from './commands.js';
+import { appendEventRecord, lastFormatChange as readLastFormatChange } from './events.js';
+import { normalizePlan, readPlanBlock } from './plan.js';
 import { normalizeTarget, sameTarget } from './target.js';
 import { oracleBindingError, oracleFileHash, readOracle } from './oracle.js';
 import type { EventRecord, PlanBlock, ProjectFile, TargetSpec } from './types.js';
@@ -168,12 +171,19 @@ export class Project {
   }
 
   private mutateFile(fn: (file: ProjectFile) => void): ProjectFile {
+    return this.mutateFileResult((file) => {
+      fn(file);
+      return file;
+    });
+  }
+
+  private mutateFileResult<T>(fn: (file: ProjectFile) => T): T {
     return this.lock.withLock(() => {
       const filePath = path.join(this.ctfDir, 'project.json');
       const file = readJson<ProjectFile>(filePath);
-      fn(file);
+      const result = fn(file);
       atomicWriteFile(filePath, JSON.stringify(file, null, 2));
-      return file;
+      return result;
     });
   }
 
@@ -189,7 +199,7 @@ export class Project {
     let commandSeq = 0;
     const file = this.mutateFile((f) => {
       if (kind === 'command') {
-        commandSeq = this.allocateCommand(f, false);
+        commandSeq = allocateCommand(f, this.ctfDir, false);
         return;
       }
       f.counters[kind] = (f.counters[kind] ?? 0) + 1;
@@ -203,108 +213,32 @@ export class Project {
   reserveCommand(): { id: string; seq: number } {
     let commandSeq = 0;
     this.mutateFile((f) => {
-      commandSeq = this.allocateCommand(f, true);
+      commandSeq = allocateCommand(f, this.ctfDir, true);
     });
     return { id: `cmd-${String(commandSeq).padStart(4, '0')}`, seq: commandSeq };
   }
 
-  private allocateCommand(file: ProjectFile, enforceBudget: boolean): number {
-    if (enforceBudget) {
-      if (file.status !== 'active') {
-        throw new KernelError('CONFLICT', `case is ${file.status}; command allocation requires an active case`);
-      }
-      const turns = file.counters.command ?? 0;
-      if (turns >= TURN_BUDGET) {
-        throw new KernelError('LIMIT', `turn budget exhausted (${turns}/${TURN_BUDGET} commands); case must restart or close`);
-      }
-      if (file.deadlineMs !== null && Date.now() > file.deadlineMs - 60_000) {
-        throw new KernelError('TIMEOUT', 'deadline reached; case must restart or close');
-      }
-    }
-    file.counters.command = (file.counters.command ?? 0) + 1;
-    // Budget and id sequence are separate: restart resets the former, but
-    // old cmd-* files must never be overwritten. Existing projects migrate
-    // by starting after the largest id already on disk.
-    const prior = Math.max(file.counters.commandSeq ?? 0, this.maxCommandSeq());
-    const seq = prior + 1;
-    file.counters.commandSeq = seq;
-    return seq;
-  }
-
-  /** Largest existing cmd-NNNN id (used to migrate projects created before the
-   *  budget/id split, and to make restart non-destructive). */
-  private maxCommandSeq(): number {
-    const dir = path.join(this.ctfDir, 'outcomes');
-    if (!fs.existsSync(dir)) return 0;
-    let max = 0;
-    for (const name of fs.readdirSync(dir)) {
-      const m = /^cmd-(\d+)\.json$/.exec(name);
-      if (m) max = Math.max(max, Number(m[1]));
-    }
-    return max;
-  }
-
   /** Last successful flagFormat change, for audit in the flag response. */
   lastFormatChange(): { ts: number; actor: string; flagFormat: string } | null {
-    const events = path.join(this.ctfDir, 'events.jsonl');
-    if (!fs.existsSync(events)) return null;
-    let last: { ts: number; actor: string; flagFormat: string } | null = null;
-    for (const line of fs.readFileSync(events, 'utf8').split('\n')) {
-      if (!line.trim()) continue;
-      try {
-        const event = JSON.parse(line) as {
-          ts?: unknown;
-          actor?: unknown;
-          type?: unknown;
-          payload?: { flagFormat?: unknown };
-        };
-        if (event.type !== 'project.reconfigure' || typeof event.ts !== 'number' || typeof event.payload?.flagFormat !== 'string') continue;
-        last = {
-          ts: event.ts,
-          actor: typeof event.actor === 'string' ? event.actor : 'adapter',
-          flagFormat: event.payload.flagFormat,
-        };
-      } catch {
-        // Audit is best effort; a truncated event line must not block flag validation.
-      }
-    }
-    return last;
+    return readLastFormatChange(path.join(this.ctfDir, 'events.jsonl'));
   }
 
   appendEvent(type: string, actor: string, payload: Record<string, unknown>): EventRecord {
-    return this.lock.withLock(() => {
-      const filePath = path.join(this.ctfDir, 'project.json');
-      const file = readJson<ProjectFile>(filePath);
-      const seq = (file.counters.event ?? 0) + 1;
-      const rec: EventRecord = { seq, ts: Date.now(), type, actor, payload };
-      fs.appendFileSync(path.join(this.ctfDir, 'events.jsonl'), JSON.stringify(rec) + '\n');
-      file.counters.event = seq;
-      file.revisions.event = seq;
-      atomicWriteFile(filePath, JSON.stringify(file, null, 2));
-      return rec;
-    });
+    return this.mutateFileResult((file) =>
+      appendEventRecord(file, path.join(this.ctfDir, 'events.jsonl'), type, actor, payload),
+    );
   }
 
   // -- plan block -----------------------------------------------------------
 
   writePlan(plan: PlanBlock): void {
-    const bounded: PlanBlock = {
-      chain: plan.chain.slice(0, 8).map((s) => s.slice(0, 200)),
-      next: plan.next.slice(0, 300),
-      preconditions: plan.preconditions.slice(0, 5).map((s) => s.slice(0, 150)),
-    };
+    const bounded = normalizePlan(plan);
     atomicWriteFile(path.join(this.ctfDir, 'plan.json'), JSON.stringify(bounded, null, 2));
     this.appendEvent('plan.update', 'adapter', { next: bounded.next });
   }
 
   readPlan(): PlanBlock {
-    return (
-      readJsonIfExists<PlanBlock>(path.join(this.ctfDir, 'plan.json')) ?? {
-        chain: [],
-        next: '',
-        preconditions: [],
-      }
-    );
+    return readPlanBlock(path.join(this.ctfDir, 'plan.json'));
   }
 
   // -- goal contract --------------------------------------------------------
