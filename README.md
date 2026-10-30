@@ -23,11 +23,11 @@
 | | 现状（可验证） | 目标（未实现） |
 |---|---|---|
 | 运行时 | `node dist/rt.js`（TypeScript 编译产物） | `bin/rt` Rust 单二进制 |
-| 模型面 | 18 个工具：4 动词 + 14 helpers | 不新增动词；能力走 `rt` 子命令 / capability / `py` SDK |
+| 模型面 | 16 个工具：4 动词 + 12 helpers | 不新增动词；能力走 `rt` 子命令 / capability / `py` SDK |
 | 状态 | `.ctf/`：events + artifacts + projections | 不变（文件即状态，无 daemon / DB） |
 | UI | `ctx.ui.notify` 文本提示 + `/ctf` 子命令 | TUI：状态文本 + HUD + 卡片 + `/ctf` overlay（只读） |
 | 记忆 | `env_memory`（宿主级环境事实） | 文件型 verified lesson（`memory-design.md`，later） |
-| 验证 | `npm test`：203 测试 / 199 通过 / 4 跳过（Windows 无 PTY） | Rust 性能指标：<5 MB、<20 ms 冷启动、RSS <32 MB |
+| 验证 | `npm test`：214 测试 / 210 通过 / 4 跳过（Windows 无 PTY） | Rust 性能指标：<5 MB、<20 ms 冷启动、RSS <32 MB |
 
 `docs/` 里标 `later` 或写“目标”的内容都**不代表已经存在**；代码里没有的东西不要当能力用。
 
@@ -114,9 +114,9 @@ Pwn 题使用 Docker backend：
 `--cap-add SYS_PTRACE`，`proc` 可在容器内读 PID 1 的 maps/mem；host session 的
 mem 读取仍受 `kernel.yama.ptrace_scope` 限制。
 
-之后直接用四个动词：`run` / `session` / `claim` / `flag`。模型实际看到 pi4ctf 的 **18 个工具**（另有 MCP 工具，如 `mcp__ctf_rag__ctf_rag`）：4 动词 + 14 helpers —
-`ctf_init`、`env_memory`、`proc`、`artifact_ingest`、`case_preflight`、`case_evidence`、`case_configure`、`case_plan`、`case_restart`、
-`case_close`、`case_clear_negatives`、`deepseek_search`、`deepseek_fetch`、`deepseek_vision`。
+之后直接用四个动词：`run` / `session` / `claim` / `flag`。模型实际看到 pi4ctf 的 **16 个工具**（另有 MCP 工具，如 `mcp__ctf_rag__ctf_rag`）：4 动词 + 12 helpers —
+`ctf_init`、`env_memory`、`proc`、`artifact_ingest`、`case_preflight`、`case_evidence`、`case_configure`、`case_plan`、
+`case_clear_negatives`、`deepseek_search`、`deepseek_fetch`、`deepseek_vision`。
 skill `ctf` 会自动加载，也可用 `/skill:ctf` 强制加载。修改扩展后执行 `/reload`。
 
 ### 知识库 MCP（ctf_rag）
@@ -170,7 +170,7 @@ Pwn 使用显式 `dockerImage`（`run`/`session` 都在容器内）；
 
 pi 1.4 加载一个扩展；扩展通过一行 JSON 调用 TS 内核。内核行为冻结后再移植 Rust。
 
-- `extensions/ctf.ts`：注册 4 个动词 + 14 个 helper（模型面共 18 个工具）、`/ctf` 命令、`CTF_MODE`，
+- `extensions/ctf.ts`：注册 4 个动词 + 12 个 helper（模型面共 16 个工具）、`/ctf` 命令、`CTF_MODE`，
   并在 `before_agent_start` 注入 kernel packet；`case` 核心 API 仍由 adapter/kernel 调用。
 - `src/kernel/`：状态与执行层 —— `run/exec`、`shape` + `signature`、`ledger`、`claim/verifier`、
   `flag`（四层）、`context/packet`、`preflight`、`proc`、`session`、`artifact`、`security`。
@@ -201,9 +201,9 @@ pi 1.4 加载一个扩展；扩展通过一行 JSON 调用 TS 内核。内核行
 | `claim` | 提交解释/断言 + quote；内核自动验证为 Fact/Negative |
 | `flag` | 提交 flag 候选；内核四层验证 |
 
-helper（14）：`ctf_init`（显式初始化，Java/归档题 fallback）、`env_memory`（工具环境记忆：recall/probe/remember/forget/note，支持 `image=<name>`）、`proc`（session 的 `/proc` 观察）、`artifact_ingest`、`case_preflight`（ELF/libc + 非 ELF 静态元数据）、
-`case_evidence`（artifact 检索）、`case_configure`（flagFormat/oracle/target/dockerImage；backend 仅 `/ctf configure`，allowedHosts 仅 rt 协议）、`case_plan`、`case_restart`、
-`case_close`、`case_clear_negatives`、`deepseek_search`、`deepseek_fetch`、`deepseek_vision`。
+helper（12）：`ctf_init`（显式初始化，Java/归档题 fallback）、`env_memory`（工具环境记忆：recall/probe/remember/forget/note，支持 `image=<name>`）、`proc`（session 的 `/proc` 观察）、`artifact_ingest`、`case_preflight`（ELF/libc + 非 ELF 静态元数据）、
+`case_evidence`（artifact 检索）、`case_configure`（flagFormat/oracle/target/dockerImage；backend 仅 `/ctf configure`，allowedHosts 仅 rt 协议）、`case_plan`、
+`case_clear_negatives`、`deepseek_search`、`deepseek_fetch`、`deepseek_vision`。
 `/ctf doctor`（host 工具 digest）是命令，不是模型工具；`case` 的 init/status/context/handoff/doctor 核心 API 仍由 adapter/kernel 调用。
 
 `session open tty:true`（仅 POSIX 宿主）用 python3 分配伪终端并在 exec 前关闭 echo：
@@ -237,7 +237,7 @@ flowchart LR
 ```
 
 - 环境：bash 与 `run`/`session` 继承同一组代理变量；`NO_PROXY` 默认 loopback；
-- 预算：45 min、30 个 execution slots（`run` / `session.open` / `artifact.ingest`；一个 `run` 占一个 slot，`probes` 批内 1–16 item；`case_restart` 人类可反复触发，每次审计）、120 s/命令、16 KB 观察；packet 约 4–5k tokens。`case_preflight`/`proc` 是静态/观测原语，不占执行预算。packet 显示 remaining/health，并在有历史完成样本时显示同 category 的 median runs-to-solve；统计写在 `~/.pi4ctf/solve-stats.jsonl`（可用 `PI4CTF_STATS_PATH` 覆盖，只记 category/runs/restarts/ts）。
+- 预算：45 min、30 个 execution slots（`run` / `session.open` / `artifact.ingest`；一个 `run` 占一个 slot，`probes` 批内 1–16 item；`/ctf restart` 人类可反复触发，每次审计）、120 s/命令、16 KB 观察；packet 约 4–5k tokens。`case_preflight`/`proc` 是静态/观测原语，不占执行预算。packet 显示 remaining/health，并在有历史完成样本时显示同 category 的 median runs-to-solve；统计写在 `~/.pi4ctf/solve-stats.jsonl`（可用 `PI4CTF_STATS_PATH` 覆盖，只记 category/runs/restarts/ts）。
 - 预算：command 计数与 deadline 在 `reserveCommand()` 的锁内检查并自增；并发 `rt` 不会写出 31/30。session open 如果分配失败会关闭已打开会话。
 - target：`project.json.target` 会注入 `HOST`/`PORT`/`TARGET`/`INSTANCE_ID` 环境；`allowedHosts` 默认/显式都始终放行 loopback（localhost/127.0.0.1/::1），`allowedHosts` 仅通过 rt 协议调整（模型工具不支持）；`run` 可覆盖 `target`/`env`，command 模式的前置 `HOST=... PORT=...` 不再改变 route signature。已声明 target 且带 TCP port 时，`run`/`flag` 默认先做 host 侧 TCP 可达性检查（`targetTimeoutMs` 可调），不可达返回 `TARGET_UNREACHABLE`；无 port/UDP 标记为 `targetReachable=null`（未检查，不伪造 true）。`backend=docker` 时 host 侧检查失败只给 warning，不硬拒 `run`/`flag`。`probes` 批次不共享单 target 预检，按每个 probe 的 `target`/env 分类；需要预检时先用 command `run`。pin oracle 检查新 target 或仅改 oracle 时的当前 target；`run` 内自起靶机才用 `skipTargetCheck=true`。
 - preflight 的 endpoint 是快照；packet 在 target 切换后显示 `preflight endpoint (stale)` 和当前 target。
