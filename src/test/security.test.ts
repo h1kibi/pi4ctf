@@ -384,6 +384,10 @@ test('packet degrades on invalid rows and unreadable state dirs', async () => {
     fs.mkdirSync(path.join(tp.project.ctfDir, 'facts'), { recursive: true });
     fs.writeFileSync(path.join(tp.project.ctfDir, 'facts', 'f9998.json'), 'null');
     fs.writeFileSync(
+      path.join(tp.project.ctfDir, 'facts', 'f9997.json'),
+      JSON.stringify({ id: 'f9997', claimType: 'observed', predicate: 'p', observationRefs: [] }),
+    );
+    fs.writeFileSync(
       path.join(tp.project.ctfDir, 'claims', 'c9998.json'),
       JSON.stringify({ id: 'c9998', state: 'proposed', claimType: 'observed', text: 'x', refs: [123] }),
     );
@@ -403,7 +407,7 @@ test('packet degrades on invalid rows and unreadable state dirs', async () => {
     fs.writeFileSync(path.join(tp.project.ctfDir, 'negatives'), 'not a directory');
     fs.writeFileSync(
       path.join(tp.project.ctfDir, 'chal.json'),
-      JSON.stringify({ endpoint: null, files: [{ path: 'bad', elf: {} }], libc: [], otherFiles: [], notes: [] }),
+      JSON.stringify({ endpoint: null, files: [{ path: 'bad', elf: { needed: [], buildId: 123 } }], libc: [], otherFiles: [], notes: [] }),
     );
 
     const ctx = await dispatch({ op: 'case.context', root: tp.root });
@@ -411,6 +415,7 @@ test('packet degrades on invalid rows and unreadable state dirs', async () => {
     assert.equal(ctx.ok ? ctx.data.integrity : '', 'degraded');
     const packet = ctx.ok ? String(ctx.data.packet) : '';
     assert.match(packet, /invalid row: facts\/f9998\.json/);
+    assert.match(packet, /invalid row: facts\/f9997\.json/);
     assert.match(packet, /invalid row: claims\/c9998\.json/);
     assert.match(packet, /invalid row: outcomes\/cmd-9998\.json/);
     assert.match(packet, /unreadable dir: negatives/);

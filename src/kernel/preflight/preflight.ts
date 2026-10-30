@@ -161,7 +161,10 @@ function isChallengeMetadata(value: unknown): value is ChallengeMetadata {
     const elf = row.elf;
     if (typeof row.path !== 'string'
       || !elf || typeof elf !== 'object' || Array.isArray(elf)
-      || !Array.isArray((elf as Record<string, unknown>).needed)) return false;
+      || !Array.isArray((elf as Record<string, unknown>).needed)
+      || ((elf as Record<string, unknown>).buildId !== undefined
+        && (elf as Record<string, unknown>).buildId !== null
+        && typeof (elf as Record<string, unknown>).buildId !== 'string')) return false;
   }
   for (const libc of m.libc) {
     if (!libc || typeof libc !== 'object' || Array.isArray(libc)

@@ -62,7 +62,8 @@ function validPacketRow(dir: string, row: unknown): boolean {
   if (dir === 'facts') {
     return typeof r.claimType === 'string'
       && typeof r.predicate === 'string'
-      && Array.isArray(r.observationRefs);
+      && Array.isArray(r.observationRefs)
+      && r.value !== undefined;
   }
   if (dir === 'negatives') {
     return typeof r.signature === 'string'

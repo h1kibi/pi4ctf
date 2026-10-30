@@ -23,6 +23,7 @@ test('exec exit 0 -> processFailure null, artifacts on disk', async () => {
     assert.ok(fs.existsSync(shaped));
     assert.equal(fs.readFileSync(shaped, 'utf8'), 'hello kernel\n');
     assert.match(outcome.canonicalKey, /^exec-local\|signature@1:/);
+    assert.equal(tp.project.file().counters.command, 1);
     const ledger = new Ledger(tp.project);
     assert.ok(ledger.getOutcome(outcome.id));
   } finally {
@@ -65,6 +66,7 @@ test('exec nonzero exit -> processFailure nonzero-exit', async () => {
     const { outcome } = await runExec(tp.project, { argv: [NODE, '-e', 'process.exit(3)'] });
     assert.equal(outcome.exit, 3);
     assert.equal(outcome.processFailure, 'nonzero-exit');
+    assert.equal(tp.project.file().counters.command, 1);
   } finally {
     tp.cleanup();
   }
