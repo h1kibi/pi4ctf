@@ -86,8 +86,29 @@ function writeEvidence(tp: TestProject, c: TimeCase): string[] {
   return refs;
 }
 
-test('time.delta accepts fixed 2x median and rejects every dirty shape', () => {
+test('time.delta requires a declared project target', () => {
   const tp = makeProject();
+  try {
+    const fixture = JSON.parse(
+      fs.readFileSync(
+        path.resolve(import.meta.dirname, '..', '..', 'fixtures', 'predicates', 'time-delta', 'accept.json'),
+        'utf8',
+      ),
+    ) as TimeFixture;
+    const c = fixture.cases[0]!;
+    const refs = writeEvidence(tp, c);
+    const verifier = new ClaimVerifier(tp.project, new Ledger(tp.project));
+    const claim = verifier.submit({ claimType: 'time-based', text: c.name, quotes: [], refs });
+    const result = verifier.verify(claim.id);
+    assert.equal(result.state, 'rejected');
+    assert.match(result.rejectedReason ?? '', /declared project target/);
+  } finally {
+    tp.cleanup();
+  }
+});
+
+test('time.delta accepts fixed 2x median and rejects every dirty shape', () => {
+  const tp = makeProject({ target: { host: '127.0.0.1', port: 8080 } });
   try {
     const verifier = new ClaimVerifier(tp.project, new Ledger(tp.project));
     for (const file of ['accept.json', 'reject.json']) {

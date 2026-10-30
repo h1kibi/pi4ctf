@@ -9,6 +9,7 @@
 import { KernelError } from '../error.js';
 import { Ledger } from '../ledger/store.js';
 import { Project } from '../project.js';
+import { targetRef } from '../target.js';
 import { checkQuote } from '../classify/classify.js';
 import type { Claim, EvidenceItem, Observation, ProcessOutcome } from '../types.js';
 
@@ -438,12 +439,20 @@ export class ClaimVerifier {
     }
     const templateMismatch = this.requireSameTemplate(ctx);
     if (templateMismatch) return templateMismatch;
-    const targets = new Set(ctx.outcomes.map((o) => o.target ?? ''));
-    if (targets.size !== 1 || targets.has('')) {
+    const wanted = targetRef(this.project.file().target);
+    if (!wanted) {
       return {
         verdict: 'rejected',
-        reason: `time-based needs one non-empty target; got ${[...targets].map((t) => t || '(empty)').join(', ')}`,
-        value: { targets: [...targets].slice(0, 4) },
+        reason: 'time-based needs a declared project target',
+        value: {},
+      };
+    }
+    const targets = new Set(ctx.outcomes.map((o) => o.target ?? ''));
+    if (targets.size !== 1 || !targets.has(wanted)) {
+      return {
+        verdict: 'rejected',
+        reason: `time-based target must match project target ${wanted}; got ${[...targets].map((t) => t || '(empty)').join(', ')}`,
+        value: { targets: [...targets].slice(0, 4), expected: wanted },
       };
     }
     for (const o of ctx.outcomes) {

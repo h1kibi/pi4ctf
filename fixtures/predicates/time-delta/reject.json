@@ -2,12 +2,20 @@
   "claimType": "time-based",
   "cases": [
     {
-      "name": "script-sleep-without-target",
+      "name": "empty-target-rejected",
       "expected": "rejected",
       "target": null,
       "durationsMs": [10, 10, 10, 30, 30, 30],
       "httpStatuses": [200, 200, 200, 200, 200, 200],
-      "reason": "one non-empty target"
+      "reason": "must match project target"
+    },
+    {
+      "name": "undeclared-local-target",
+      "expected": "rejected",
+      "target": "127.0.0.1:9999",
+      "durationsMs": [10, 10, 10, 30, 30, 30],
+      "httpStatuses": [200, 200, 200, 200, 200, 200],
+      "reason": "must match project target"
     },
     {
       "name": "timeout-in-probe",

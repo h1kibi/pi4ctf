@@ -277,8 +277,8 @@ export default function pi4ctf(pi: ExtensionAPI): void {
           display: false,
         },
       };
-    } catch {
-      // Context injection is best effort; tool calls will surface kernel errors.
+    } catch (err) {
+      ctx.ui.notify(`context injection failed: ${err instanceof Error ? err.message : String(err)}`, "error");
     }
   });
 

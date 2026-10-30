@@ -64,7 +64,7 @@ Each parsed field carries:
 - DifferentialObservation is produced by the capability layer; baseline and probe are both `ProcessOutcome`.
 - Baseline/probe `argvTemplate` must be identical except declared `<v:n>` slots.
 - A/A gate: baseline vs baseline before claiming a difference; unstable A/A → no differential evidence.
-- time-based: even number >=6 (>=3 runs per side), clean outcomes, one non-empty shared target, median; thresholds frozen in predicate fixture.
+- time-based: even number >=6 (>=3 runs per side), clean outcomes, every outcome on the project's declared target, median; thresholds frozen in predicate fixture.
 - Deterministic fast path: only if predicate declares `deterministic=true` and A/A variance is 0; cache key is `(signature, envFingerprint, predicateSemver)`. `signature` already includes target/intentClass. Stochastic/time-based never skip A/A.
 
 ### 4. Negative ledger v2
