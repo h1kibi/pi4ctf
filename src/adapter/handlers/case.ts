@@ -58,9 +58,9 @@ export async function handleCase(req: Request, op: string, input: Record<string,
       const clearedNegatives = new Ledger(project).clearTransientNegatives();
       return ok(op, { ...restarted, clearedNegatives });
     }
-    case 'case.continue': {
+    case 'case.resetBudget': {
       const project = needRoot(req);
-      return ok(op, project.continueCase());
+      return ok(op, project.resetBudget());
     }
     case 'case.configure': {
       const project = needRoot(req);

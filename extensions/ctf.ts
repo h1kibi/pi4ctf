@@ -59,7 +59,7 @@ async function notifyRt(
 
 function ctfCommand(pi: ExtensionAPI): void {
   pi.registerCommand("ctf", {
-    description: "pi4ctf case commands: init/status/context/handoff/doctor/preflight/plan/restart/continue/close/complete/configure",
+    description: "pi4ctf case commands: init/status/context/handoff/doctor/preflight/plan/restart/reset/close/complete/configure",
     handler: async (args, ctx) => {
       const words = shellWords(args.trim());
       const sub = (words.shift() ?? "help").toLowerCase();
@@ -76,7 +76,7 @@ function ctfCommand(pi: ExtensionAPI): void {
             "/ctf preflight",
             "/ctf plan <next>",
             "/ctf restart",
-            "/ctf continue",
+            "/ctf reset",
             "/ctf close [completed|failed|stopped]",
             "/ctf clear-soft",
             "/ctf configure [flagFormat] [oracleRef] [host|docker] [dockerImage] [target]",
@@ -182,8 +182,8 @@ function ctfCommand(pi: ExtensionAPI): void {
         case "restart":
           await notifyRt(ctx, "case.restart", root, {});
           return;
-        case "continue":
-          await notifyRt(ctx, "case.continue", root, {});
+        case "reset":
+          await notifyRt(ctx, "case.resetBudget", root, {});
           return;
         case "close":
           await notifyRt(ctx, "case.close", root, { status: words[0] });
