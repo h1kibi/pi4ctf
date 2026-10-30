@@ -43,6 +43,7 @@ async function dispatchInner(req: Request): Promise<Response> {
     op === 'project.close' ||
     op === 'case.close' ||
     op === 'case.restart' ||
+    op === 'case.continue' ||
     op === 'case.configure' ||
     op === 'case.clearNegatives' ||
     op === 'case.plan' ||

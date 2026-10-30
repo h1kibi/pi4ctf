@@ -378,6 +378,32 @@ test('negative gate: hard-blocked route returns CONFLICT without executing', asy
   }
 });
 
+test('case.continue resets budget without consuming restart cap', async () => {
+  const tp = makeProject();
+  try {
+    const file = tp.project.file();
+    fs.writeFileSync(
+      path.join(tp.root, '.ctf', 'project.json'),
+      JSON.stringify({ ...file, counters: { ...file.counters, command: 30, restart: 3 } }, null, 2),
+    );
+    const cont = await dispatch({ op: 'case.continue', root: tp.root });
+    assert.equal(cont.ok, true);
+    assert.equal(tp.project.file().counters.command, 0);
+    assert.equal(tp.project.file().counters.restart, 3);
+    assert.equal(tp.project.file().counters.continue, 1);
+
+    const run = await dispatch({
+      op: 'run',
+      root: tp.root,
+      input: { argv: [NODE, '-e', 'console.log("continued")'] },
+    });
+    assert.equal(run.ok, true);
+    assert.equal(tp.project.file().counters.command, 1);
+  } finally {
+    tp.cleanup();
+  }
+});
+
 test('packet degrades on invalid rows and unreadable state dirs', async () => {
   const tp = makeProject();
   try {

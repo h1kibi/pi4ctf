@@ -26,7 +26,8 @@ import { envMemoryTool } from "./tools/env.js";
 import { deepseekSearchTool, deepseekFetchTool, deepseekVisionTool } from "./tools/external.js";
 
 import { ctfInitTool, runTool, sessionTool, procTool, claimTool, flagTool } from "./tools/core.js";
-import { casePlanTool, caseRestartTool, caseCloseTool, artifactIngestTool, casePreflightTool, caseClearNegativesTool, caseConfigureTool, caseEvidenceTool } from "./tools/case.js";
+import { casePlanTool, artifactIngestTool, casePreflightTool, caseClearNegativesTool, caseConfigureTool, caseEvidenceTool } from "./tools/case.js";
+import { buildWriteupPrompt, resolveWriteup } from "./writeup.js";
 
 // /ctf command
 // ---------------------------------------------------------------------------
@@ -57,9 +58,15 @@ async function notifyRt(
   }
 }
 
+function sendPrompt(pi: ExtensionAPI, ctx: ExtensionContext, prompt: string): void {
+  const text = prompt.trim();
+  if (!text) return;
+  pi.sendUserMessage(text, ctx.isIdle() ? undefined : { deliverAs: "followUp" });
+}
+
 function ctfCommand(pi: ExtensionAPI): void {
   pi.registerCommand("ctf", {
-    description: "pi4ctf case commands: init/status/context/handoff/doctor/preflight/plan/restart/close/complete/configure",
+    description: "pi4ctf case commands: init/status/context/handoff/doctor/preflight/plan/restart/continue/clear-soft/configure/wp",
     handler: async (args, ctx) => {
       const words = shellWords(args.trim());
       const sub = (words.shift() ?? "help").toLowerCase();
@@ -76,10 +83,10 @@ function ctfCommand(pi: ExtensionAPI): void {
             "/ctf preflight",
             "/ctf plan <next>",
             "/ctf restart",
-            "/ctf close [completed|failed|stopped]",
+            "/ctf continue [prompt]",
             "/ctf clear-soft",
             "/ctf configure [flagFormat] [oracleRef] [host|docker] [dockerImage] [target]",
-            "/ctf complete",
+            "/ctf wp [template-file-or-folder] [output-file]",
             "/ctf debug",
           ].join("\n"),
           "info",
@@ -170,9 +177,6 @@ function ctfCommand(pi: ExtensionAPI): void {
           await notifyRt(ctx, "case.preflight", root, {});
           lastInjectedByRoot.delete(root);
           return;
-        case "complete":
-          await notifyRt(ctx, "case.complete", root, {});
-          return;
         case "plan": {
           const next = words.join(" ").trim();
           await notifyRt(ctx, "case.plan", root, { chain: [], next, preconditions: [] });
@@ -181,9 +185,17 @@ function ctfCommand(pi: ExtensionAPI): void {
         case "restart":
           await notifyRt(ctx, "case.restart", root, {});
           return;
-        case "close":
-          await notifyRt(ctx, "case.close", root, { status: words[0] });
+        case "continue": {
+          const prompt = words.join(" ").trim();
+          const res = await callRt("case.continue", root, {});
+          if (!res.ok) {
+            ctx.ui.notify(`case.continue failed [${res.error?.code}]: ${res.error?.message}`, "error");
+            return;
+          }
+          ctx.ui.notify(`case.continue: ${JSON.stringify(res.data ?? {})}`, "info");
+          sendPrompt(pi, ctx, prompt);
           return;
+        }
         case "clear-soft":
           await notifyRt(ctx, "case.clearNegatives", root, {});
           return;
@@ -197,6 +209,28 @@ function ctfCommand(pi: ExtensionAPI): void {
           });
           await refreshPreflight(ctx, root, true);
           return;
+        case "wp": {
+          let caseId = path.basename(root) || "ctf";
+          try {
+            const file = JSON.parse(fs.readFileSync(path.join(root, ".ctf", "project.json"), "utf8")) as { id?: unknown };
+            if (typeof file.id === "string" && file.id.length > 0) caseId = file.id;
+          } catch {
+            // Keep the directory name if project.json is unreadable.
+          }
+          try {
+            const target = resolveWriteup(root, caseId, words[0], words[1]);
+            const handoff = await callRt("case.handoff", root, {});
+            if (!handoff.ok) {
+              ctx.ui.notify(`writeup handoff failed [${handoff.error?.code}]: ${handoff.error?.message}`, "error");
+            }
+            const prompt = buildWriteupPrompt({ root, caseId, target });
+            ctx.ui.notify(`writeup: ${target.templateRel} -> ${target.outputRel}`, "info");
+            sendPrompt(pi, ctx, prompt);
+          } catch (err) {
+            ctx.ui.notify(String(err), "error");
+          }
+          return;
+        }
         default:
           ctx.ui.notify(`unknown /ctf subcommand: ${sub}; try /ctf help`, "error");
       }
@@ -217,8 +251,6 @@ export default function pi4ctf(pi: ExtensionAPI): void {
   pi.registerTool(claimTool);
   pi.registerTool(flagTool);
   pi.registerTool(casePlanTool);
-  pi.registerTool(caseRestartTool);
-  pi.registerTool(caseCloseTool);
   pi.registerTool(artifactIngestTool);
   pi.registerTool(casePreflightTool);
   pi.registerTool(caseClearNegativesTool);

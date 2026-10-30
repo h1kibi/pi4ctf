@@ -28,41 +28,9 @@ export const casePlanTool = defineTool({
   },
 });
 
-export const caseRestartTool = defineTool({
-  name: "case_restart",
-  label: "CTF restart",
-  description:
-    "Start a fresh 30-execution budget after LIMIT, preserving artifacts, claims, facts, and the negative ledger. Audited and capped.",
-  parameters: Type.Object({ root: RootParam }),
-  async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-    try {
-      const root = rootFor(ctx, params.root);
-      const res = await callRt("case.restart", root, {});
-      return responseResult(res, "case.restart");
-    } catch (err) {
-      return failure(err);
-    }
-  },
-});
 
-export const caseCloseTool = defineTool({
-  name: "case_close",
-  label: "CTF close",
-  description: "Close the case as failed or stopped. Completed is reserved for case_complete, which requires a verified Fact. Runs are rejected after close.",
-  parameters: Type.Object({
-    status: Type.Optional(Type.String({ description: "failed | stopped (completed is rejected; use case_complete)" })),
-    root: RootParam,
-  }),
-  async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-    try {
-      const root = rootFor(ctx, params.root);
-      const res = await callRt("case.close", root, { status: params.status });
-      return responseResult(res, "case.close");
-    } catch (err) {
-      return failure(err);
-    }
-  },
-});
+
+
 
 export const artifactIngestTool = defineTool({
   name: "artifact_ingest",

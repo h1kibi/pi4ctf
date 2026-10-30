@@ -86,8 +86,6 @@ Use these tools for challenge work:
 - `claim` — submit an explanation with quotes from a shaped artifact.
 - `flag` — submit a candidate for four-layer validation.
 - `case_plan` — set the packet plan (`next`, optional `chain`/`preconditions`).
-- `case_restart` — reset the 30-execution budget after `LIMIT`; evidence/claims/facts survive.
-- `case_close` — close the case as `failed` or `stopped`; `completed` is reserved for `case_complete` (verified Fact gate).
 - `case_configure` — repair `flagFormat`, `oracleRef`, `backend`, `dockerImage`, and/or `target`, then pin the current oracle contents; validates the new target or the current target when only `oracleRef` changes; does not discard evidence.
 - `case_clear_negatives` — clear soft/transient negative-ledger entries without resetting the budget; hard blocks stay.
 - `deepseek_search` — search the live web through DeepSeek's Search API; returns titles, URLs, snippets, summaries, authority, optional content.
@@ -187,7 +185,7 @@ The kernel never auto-submits.
 ## Budget
 
 - 30 execution slots per case (`run`, `session.open`, or `artifact.ingest`; one `run` is one slot, a `probes` batch is 1–16 items); 120 s default per command; 600 s max. The packet shows remaining/health and, when prior completed cases exist, the category median runs-to-solve; environment incidents are listed separately from route dead ends.
-- `case_restart` grants a fresh 30-call budget, up to 3 times; `case_close` stops the case.
+- `case_restart` is not a model tool. If the budget is exhausted, report `LIMIT` to the user and stop; only the human can reset it with `/ctf continue` or `/ctf restart`.
 - Use `session` for long-lived processes rather than many one-shot runs. Opening a session consumes one command; its I/O is not charged per keystroke.
 - At a natural boundary, run `/ctf handoff` to persist resume state.
 
@@ -250,7 +248,7 @@ External evidence must be brought into `.ctf/artifacts` first: prefer `run cat /
 - If recognition fails, say so and try a different vulnerability class.
 - If execution fails after correct recognition, narrow the probe; do not broaden scope.
 - If the same signature fails twice, inspect the negative ledger and change the route.
-If `run` returns `LIMIT`, call `case_restart`; if the restart cap is reached, call `case_close`. If a soft negative blocks a route you still need, call `case_clear_negatives`.
+If `run` returns `LIMIT`, report the exhausted budget to the user and stop; do not attempt to reset it yourself. If a soft negative blocks a route you still need, ask the user before clearing it.
 - If no progress after a few probes, hand off or ask the user for a hint.
 
 ## Useful commands

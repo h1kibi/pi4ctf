@@ -220,6 +220,21 @@ export class Project {
     });
   }
 
+  /** Human-only budget continuation: same context, fresh command budget. */
+  continueBudget(): { continues: number; command: number } {
+    let continues = 0;
+    this.mutateFile((f) => {
+      if (f.status !== 'active') {
+        throw new KernelError('CONFLICT', `case is ${f.status}; continue requires an active case`);
+      }
+      f.counters.command = 0;
+      continues = (f.counters.continue ?? 0) + 1;
+      f.counters.continue = continues;
+    });
+    this.appendEvent('case.continue', 'adapter', { continue: continues, command: 0 });
+    return { continues, command: 0 };
+  }
+
   /** Last successful flagFormat change, for audit in the flag response. */
   lastFormatChange(): { ts: number; actor: string; flagFormat: string } | null {
     return readLastFormatChange(path.join(this.ctfDir, 'events.jsonl'));
