@@ -41,8 +41,8 @@ export function assertNotKernelOnly(project: Project | null, op: string): void {
 
 /** Goal-contract scope check for run: every host referenced by argv must be
  *  allowed; any unparsable `://` token fails closed (review C1). This is a
- *  best-effort inline gate — the durable egress boundary is the docker
- *  backend's network policy, not string parsing. */
+ *  best-effort argv string match and can be bypassed; the scope constraint
+ *  depends on the oracle and human review. */
 function hostAllowed(allowedHosts: string[], host: string): boolean {
   const h = host.toLowerCase();
   // Local validation targets are always reachable from the host; blocking

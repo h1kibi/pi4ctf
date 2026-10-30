@@ -506,6 +506,10 @@ export async function runProbes(
           bodyDigest = sha256(Buffer.from(httpSpec.body, 'utf8'));
         }
         sig = signature(['http', (httpSpec.method ?? 'GET').toUpperCase(), httpSpec.url, ...(bodyDigest ? [bodyDigest] : [])]);
+        const httpBlocked = new Ledger(project).blockedSignature(`${intentClass}|signature@1:${sig.signature}`);
+        if (httpBlocked && !httpBlocked.transient) {
+          throw new KernelError('CONFLICT', `probe hard-blocked: ${httpBlocked.failureClass}; unblockOn=${httpBlocked.unblockOn}`);
+        }
         const httpResult = await performHttp({
           ...httpSpec,
           timeoutMs: Math.min(httpSpec.timeoutMs ?? 30_000, remaining),
@@ -542,6 +546,10 @@ export async function runProbes(
         checkRunScope(project, prep.userArgv);
         intentClass = commandClassOf(prep.userArgv);
         sig = signature(prep.userArgv);
+        const commandBlocked = new Ledger(project).blockedSignature(`${intentClass}|signature@1:${sig.signature}`);
+        if (commandBlocked && !commandBlocked.transient) {
+          throw new KernelError('CONFLICT', `probe hard-blocked: ${commandBlocked.failureClass}; unblockOn=${commandBlocked.unblockOn}`);
+        }
         const declared = spec.target === undefined
           ? (file.target ?? targetFromEnv(spec.env) ?? null)
           : spec.target;
@@ -551,10 +559,6 @@ export async function runProbes(
         const timeoutMs = Math.min(requestedTimeout, remaining);
         if (timeoutMs <= 0) throw new KernelError('INVALID_REQUEST', 'timeoutMs must be positive');
         raw = await runRaw(prep, timeoutMs, req.stdin);
-      }
-      const blocked = new Ledger(project).blockedSignature(`${intentClass}|signature@1:${sig.signature}`);
-      if (blocked && !blocked.transient) {
-        throw new KernelError('CONFLICT', `probe hard-blocked: ${blocked.failureClass}; unblockOn=${blocked.unblockOn}`);
       }
       const itemId = `${parentId}.${String(i + 1).padStart(4, '0')}`;
       const artifactId = `${parentId}.item-${String(i + 1).padStart(4, '0')}`;

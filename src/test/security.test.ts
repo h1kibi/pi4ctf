@@ -10,6 +10,9 @@ import { test } from 'node:test';
 import { dispatch } from '../adapter/protocol.js';
 import { scanInjection, wrapUntrusted } from '../kernel/security.js';
 import { Project } from '../kernel/project.js';
+import { Ledger } from '../kernel/ledger/store.js';
+import { commandClassOf } from '../kernel/classify/classify.js';
+import { signature } from '../kernel/shape/signature.js';
 import { commandExists } from '../kernel/sysutil.js';
 import { makeProject } from './helpers.js';
 
@@ -43,7 +46,7 @@ test('goal contract: run to non-allowed host is blocked and audited', async () =
 test('kernel-only ops are blocked with audit, not INVALID_REQUEST', async () => {
   const tp = makeProject();
   try {
-    for (const op of ['predicate.register', 'contract.override', 'guardrail.edit', 'budget.raise', 'allowedHosts.expand', 'memory.addGlobal', 'flag.write', 'flag.txt']) {
+    for (const op of ['predicate.register', 'contract.override', 'guardrail.edit', 'budget.raise', 'allowedHosts.expand', 'memory.addGlobal', 'flag.write', 'flag.txt', 'registry.write']) {
       const res = await dispatch({ op, root: tp.root, input: {} });
       assert.equal(res.ok, false, `${op} should be blocked`);
       if (!res.ok) assert.equal(res.error.code, 'SECURITY', `${op} should be SECURITY`);
@@ -351,10 +354,7 @@ test('negative gate: hard-blocked route returns CONFLICT without executing', asy
   const tp = makeProject();
   try {
     // a deterministic schema-mismatch style hard block on this signature
-    const { Ledger } = await import('../kernel/ledger/store.js');
     const ledger = new Ledger(tp.project);
-    const { commandClassOf } = await import('../kernel/classify/classify.js');
-    const { signature } = await import('../kernel/shape/signature.js');
     const argv = [NODE, '-e', 'console.log("will-be-blocked")'];
     ledger.addNegative({
       signature: `${commandClassOf(argv)}|signature@1:${signature(argv).signature}`,
@@ -372,6 +372,20 @@ test('negative gate: hard-blocked route returns CONFLICT without executing', asy
     assert.equal(res.ok, false);
     assert.equal(res.ok ? '' : res.error.code, 'CONFLICT');
     assert.equal(tp.project.file().counters.command, before, 'blocked run must not execute');
+  } finally {
+    tp.cleanup();
+  }
+});
+
+test('doctor reports corrupt state JSON; listFacts stops skipping it', async () => {
+  const tp = makeProject();
+  try {
+    fs.mkdirSync(path.join(tp.project.ctfDir, 'facts'), { recursive: true });
+    fs.writeFileSync(path.join(tp.project.ctfDir, 'facts', 'f9999.json'), '{broken');
+    const res = await dispatch({ op: 'case.doctor', root: tp.root });
+    assert.equal(res.ok, true);
+    assert.match(JSON.stringify(res), /unreadable json: facts\/f9999\.json/);
+    assert.throws(() => new Ledger(tp.project).listFacts(), /cannot read .*f9999\.json/);
   } finally {
     tp.cleanup();
   }

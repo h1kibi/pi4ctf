@@ -67,32 +67,28 @@ function artifactIsSynthetic(project: Project, ref: string): boolean {
   if (!fs.existsSync(outcomesDir)) return false;
   for (const name of fs.readdirSync(outcomesDir)) {
     if (!name.endsWith('.json')) continue;
-    try {
-      const o = JSON.parse(fs.readFileSync(path.join(outcomesDir, name), 'utf8')) as {
-        id?: string;
-        synthetic?: boolean;
+    const o = JSON.parse(fs.readFileSync(path.join(outcomesDir, name), 'utf8')) as {
+      id?: string;
+      synthetic?: boolean;
+      stdout?: { rawRef?: string; shapedRef?: string };
+      stderr?: { rawRef?: string; shapedRef?: string };
+    };
+    if (!o.synthetic) continue;
+    if ([o.stdout?.rawRef, o.stdout?.shapedRef, o.stderr?.rawRef, o.stderr?.shapedRef].includes(ref)) {
+      return true;
+    }
+    if (!o.id) continue;
+    const itemsDir = path.join(project.ctfDir, 'items');
+    if (!fs.existsSync(itemsDir)) continue;
+    for (const itemName of fs.readdirSync(itemsDir)) {
+      if (!itemName.startsWith(`${o.id}.`) || !itemName.endsWith('.json')) continue;
+      const item = JSON.parse(fs.readFileSync(path.join(itemsDir, itemName), 'utf8')) as {
         stdout?: { rawRef?: string; shapedRef?: string };
         stderr?: { rawRef?: string; shapedRef?: string };
       };
-      if (!o.synthetic) continue;
-      if ([o.stdout?.rawRef, o.stdout?.shapedRef, o.stderr?.rawRef, o.stderr?.shapedRef].includes(ref)) {
+      if ([item.stdout?.rawRef, item.stdout?.shapedRef, item.stderr?.rawRef, item.stderr?.shapedRef].includes(ref)) {
         return true;
       }
-      if (!o.id) continue;
-      const itemsDir = path.join(project.ctfDir, 'items');
-      if (!fs.existsSync(itemsDir)) continue;
-      for (const itemName of fs.readdirSync(itemsDir)) {
-        if (!itemName.startsWith(`${o.id}.`) || !itemName.endsWith('.json')) continue;
-        const item = JSON.parse(fs.readFileSync(path.join(itemsDir, itemName), 'utf8')) as {
-          stdout?: { rawRef?: string; shapedRef?: string };
-          stderr?: { rawRef?: string; shapedRef?: string };
-        };
-        if ([item.stdout?.rawRef, item.stdout?.shapedRef, item.stderr?.rawRef, item.stderr?.shapedRef].includes(ref)) {
-          return true;
-        }
-      }
-    } catch {
-      // ignore corrupt
     }
   }
   return false;

@@ -303,11 +303,7 @@ export class Ledger {
       .sort();
     const items: T[] = [];
     for (const name of names) {
-      try {
-        items.push(readJson<T>(path.join(abs, name)));
-      } catch {
-        // skip unreadable node; doctor reports it
-      }
+      items.push(readJson<T>(path.join(abs, name)));
     }
     return items;
   }

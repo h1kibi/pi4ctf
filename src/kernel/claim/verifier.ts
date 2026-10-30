@@ -21,7 +21,6 @@ export interface PredicateSpec {
   claimTypes: string[];
   requiredEvidence: ('outcome' | 'quote')[];
   check: 'probe' | 'parse';
-  fixtureIds: string[];
 }
 
 export const PREDICATES: Record<string, PredicateSpec> = {
@@ -30,28 +29,24 @@ export const PREDICATES: Record<string, PredicateSpec> = {
     claimTypes: ['observed'],
     requiredEvidence: ['outcome'],
     check: 'probe',
-    fixtureIds: ['fx-exit-zero', 'fx-exit-nonzero'],
   },
   'output.contains@1.0.0': {
     id: 'output.contains@1.0.0',
     claimTypes: ['interpreted'],
     requiredEvidence: ['outcome', 'quote'],
     check: 'parse',
-    fixtureIds: ['fx-contains-hit', 'fx-contains-miss'],
   },
   'http.length_delta@1.0.0': {
     id: 'http.length_delta@1.0.0',
     claimTypes: ['differential'],
     requiredEvidence: ['outcome'],
     check: 'parse',
-    fixtureIds: ['fx-len-delta-true', 'fx-len-delta-false'],
   },
   'time.delta@1.0.0': {
     id: 'time.delta@1.0.0',
     claimTypes: ['time-based'],
     requiredEvidence: ['outcome'],
     check: 'probe',
-    fixtureIds: ['fx-time-delta-true', 'fx-time-delta-false'],
   },
 };
 
@@ -64,8 +59,8 @@ export function defaultPredicateFor(claimType: string): PredicateSpec {
   throw new KernelError('INVALID_REQUEST', `unknown claimType: ${claimType}`);
 }
 
-const LEN_DELTA_THRESHOLD = 0.1; // frozen in fixture fx-len-delta-*
-const TIME_DELTA_FACTOR = 2.0; // frozen in fixture fx-time-delta-*
+const LEN_DELTA_THRESHOLD = 0.1; // frozen threshold
+const TIME_DELTA_FACTOR = 2.0; // frozen by fixtures/predicates/time-delta
 
 export interface VerifyContext {
   outcomes: ProcessOutcome[];
@@ -431,27 +426,40 @@ export class ClaimVerifier {
     return { verdict: 'accepted', reason: `length delta ratio ${ratio.toFixed(4)} >= ${LEN_DELTA_THRESHOLD}`, value };
   }
 
-  /** time-based: same template + same target, >=3 runs per side, median
-   *  duration ratio >= 2x (review R2). */
+  /** time-based: same template and one non-empty target, an even number of
+   *  clean runs (>=6, equal legs), median duration ratio >= 2x. */
   private checkTimeDelta(ctx: VerifyContext): PredicateResult {
-    if (ctx.outcomes.length < 6) {
+    if (ctx.outcomes.length < 6 || ctx.outcomes.length % 2 !== 0) {
       return {
         verdict: 'rejected',
-        reason: `time-based needs >=6 refs (3 baseline + 3 probe); got ${ctx.outcomes.length}`,
+        reason: `time-based needs an even number of refs >=6; got ${ctx.outcomes.length}`,
         value: {},
       };
     }
     const templateMismatch = this.requireSameTemplate(ctx);
     if (templateMismatch) return templateMismatch;
     const targets = new Set(ctx.outcomes.map((o) => o.target ?? ''));
-    if (targets.size > 1) {
+    if (targets.size !== 1 || targets.has('')) {
       return {
         verdict: 'rejected',
-        reason: `time-based legs must share one target; got ${[...targets].join(', ')}`,
-        value: {},
+        reason: `time-based needs one non-empty target; got ${[...targets].map((t) => t || '(empty)').join(', ')}`,
+        value: { targets: [...targets].slice(0, 4) },
       };
     }
-    const half = Math.floor(ctx.outcomes.length / 2);
+    for (const o of ctx.outcomes) {
+      const obs = ctx.observations.get(o.id);
+      if (o.processFailure) {
+        return { verdict: 'rejected', reason: `${o.id} processFailure=${o.processFailure}`, value: {} };
+      }
+      if (obs?.semanticFailure) {
+        return { verdict: 'rejected', reason: `${o.id} semanticFailure=${obs.semanticFailure}`, value: {} };
+      }
+      const status = obs?.parsed['http.status']?.value;
+      if (typeof status === 'number' && status >= 400) {
+        return { verdict: 'rejected', reason: `${o.id} http.status=${status}`, value: {} };
+      }
+    }
+    const half = ctx.outcomes.length / 2;
     const baseline = median(ctx.outcomes.slice(0, half).map((o) => o.durationMs));
     const probe = median(ctx.outcomes.slice(half).map((o) => o.durationMs));
     const value = { baselineMs: baseline, probeMs: probe, factor: baseline === 0 ? Infinity : Number((probe / baseline).toFixed(3)) };

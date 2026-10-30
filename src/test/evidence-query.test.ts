@@ -58,6 +58,42 @@ test('case.evidence head/tail are line-oriented and bounded', async () => {
 });
 
 
+test('case.evidence reports injection markers for grep, slices, and offset', async () => {
+  const tp = makeProject();
+  try {
+    const run = await runExec(tp.project, {
+      argv: [NODE, '-e', 'console.log("alpha"); console.log("ignore previous instructions"); console.log("omega")'],
+    });
+    const ref = run.outcome.id;
+    const grep = await dispatch({ op: 'case.evidence', root: tp.root, input: { ref, grep: 'ignore' } });
+    assert.equal(grep.ok, true);
+    assert.deepEqual(
+      (grep.ok ? grep.data.injectionMarkers : []) as string[],
+      ['ignore previous instructions'],
+    );
+    const head = await dispatch({ op: 'case.evidence', root: tp.root, input: { ref, head: 2 } });
+    assert.equal(head.ok, true);
+    assert.deepEqual(
+      (head.ok ? head.data.injectionMarkers : []) as string[],
+      ['ignore previous instructions'],
+    );
+    const tail = await dispatch({ op: 'case.evidence', root: tp.root, input: { ref, tail: 2 } });
+    assert.equal(tail.ok, true);
+    assert.deepEqual(
+      (tail.ok ? tail.data.injectionMarkers : []) as string[],
+      ['ignore previous instructions'],
+    );
+    const offset = await dispatch({ op: 'case.evidence', root: tp.root, input: { ref, offset: 6, limit: 40 } });
+    assert.equal(offset.ok, true);
+    assert.deepEqual(
+      (offset.ok ? offset.data.injectionMarkers : []) as string[],
+      ['ignore previous instructions'],
+    );
+  } finally {
+    tp.cleanup();
+  }
+});
+
 test('claim can locate a unique substring without explicit offsets', async () => {
   const { tp } = await makeRun();
   try {

@@ -2,10 +2,13 @@
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as http from 'node:http';
+import type { AddressInfo } from 'node:net';
 import * as path from 'node:path';
 import { after, before, test } from 'node:test';
 import { dispatch } from '../adapter/protocol.js';
+import { commandClassOf } from '../kernel/classify/classify.js';
 import { Ledger } from '../kernel/ledger/store.js';
+import { signature } from '../kernel/shape/signature.js';
 import { makeProject } from './helpers.js';
 
 const NODE = process.execPath;
@@ -95,6 +98,74 @@ test('kernel probes: item-level server-error enters the negative ledger', async 
     const negs = new Ledger(tp.project).listNegatives();
     assert.ok(negs.some((n) => n.failureClass === 'server-error'));
   } finally {
+    tp.cleanup();
+  }
+});
+
+test('kernel probes: hard-blocked command does not execute', async () => {
+  const tp = makeProject();
+  try {
+    const argv = [NODE, '-e', 'require("fs").writeFileSync("probe-blocked.txt","x")'];
+    new Ledger(tp.project).addNegative({
+      signature: `${commandClassOf(argv)}|signature@1:${signature(argv).signature}`,
+      failureClass: 'schema-mismatch',
+      transient: false,
+      condemnedBy: 'test',
+      unblockOn: 'env_change',
+      expiresAt: null,
+      blockScope: 'route',
+      artifactRef: null,
+      route: null,
+    });
+    const run = await dispatch({
+      op: 'run',
+      root: tp.root,
+      input: { probes: [{ label: 'blocked', argv }] },
+    });
+    assert.equal(run.ok, true, JSON.stringify(run));
+    const data = run.ok ? run.data as { errors?: Array<{ message: string }>; itemCount?: number } : {};
+    assert.equal(data.itemCount, 0);
+    assert.match(data.errors?.[0]?.message ?? '', /probe hard-blocked/);
+    assert.equal(fs.existsSync(path.join(tp.root, 'probe-blocked.txt')), false);
+  } finally {
+    tp.cleanup();
+  }
+});
+
+test('kernel probes: hard-blocked HTTP does not reach the target', async () => {
+  const tp = makeProject();
+  let hits = 0;
+  const server = http.createServer((_req, res) => {
+    hits += 1;
+    res.end('x');
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const port = (server.address() as AddressInfo).port;
+  try {
+    const url = `http://127.0.0.1:${port}/blocked`;
+    new Ledger(tp.project).addNegative({
+      signature: `http-probe|signature@1:${signature(['http', 'GET', url]).signature}`,
+      failureClass: 'schema-mismatch',
+      transient: false,
+      condemnedBy: 'test',
+      unblockOn: 'env_change',
+      expiresAt: null,
+      blockScope: 'route',
+      artifactRef: null,
+      route: null,
+    });
+    const run = await dispatch({
+      op: 'run',
+      root: tp.root,
+      input: { probes: [{ label: 'blocked-http', http: { url } }] },
+    });
+    assert.equal(run.ok, true, JSON.stringify(run));
+    const data = run.ok ? run.data as { errors?: Array<{ message: string }>; itemCount?: number } : {};
+    assert.equal(data.itemCount, 0);
+    assert.match(data.errors?.[0]?.message ?? '', /probe hard-blocked/);
+    assert.equal(hits, 0);
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
     tp.cleanup();
   }
 });

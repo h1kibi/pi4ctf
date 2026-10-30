@@ -160,7 +160,7 @@ The kernel checks `text == shaped[start:end]`. If it rejects, do not resubmit th
 signature; produce new evidence.
 
 Use `differential` only for two legs of the same command template against the same target.
-Use `time-based` only with at least 3 baseline + 3 probe runs of the same template.
+Use `time-based` only with an even number (>=6) of clean runs of the same template against one non-empty target; at least 3 baseline + 3 probe runs.
 
 ## session rules
 

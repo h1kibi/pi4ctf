@@ -137,8 +137,8 @@ export async function handleRun(req: Request, op: string, input: Record<string, 
       // normalized signature collapses different programs to one route, so a
       // timeout/nonzero from one script must not condemn the shape. The model
       // still sees the ProcessOutcome; it just does not enter the ledger.
-      if (outcome.intentClass !== 'exec-local' && obs?.semanticFailure !== 'target-unreachable' && (outcome.processFailure || obs?.semanticFailure)) {
-        const spec = negativeSpecFor(outcome.processFailure, obs?.semanticFailure ?? null);
+      if (outcome.intentClass !== 'exec-local' && obs.semanticFailure !== 'target-unreachable' && (outcome.processFailure || obs.semanticFailure)) {
+        const spec = negativeSpecFor(outcome.processFailure, obs.semanticFailure);
         ledger.addNegative({
           signature: key,
           failureClass: spec.failureClass,
@@ -159,7 +159,7 @@ export async function handleRun(req: Request, op: string, input: Record<string, 
         exit: outcome.exit,
         durationMs: outcome.durationMs,
         processFailure: outcome.processFailure,
-        semanticFailure: obs?.semanticFailure ?? null,
+        semanticFailure: obs.semanticFailure,
         intentClass: outcome.intentClass,
         canonicalKey: outcome.canonicalKey,
         target: outcome.target,

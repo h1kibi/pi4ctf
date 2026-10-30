@@ -145,6 +145,9 @@ test('E2E: init -> run baseline/probe -> claim differential -> flag -> complete'
     const doctor = await dispatch({ op: 'case.doctor', root });
     assert.equal(doctor.ok, true);
     assert.deepEqual(doctor.ok ? doctor.data.issues : ['x'], []);
+    const artifacts = doctor.ok ? (doctor.data.artifacts as { files: number; bytes: number }) : null;
+    assert.ok(artifacts && artifacts.files > 0);
+    assert.ok(artifacts && artifacts.bytes > 0);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
     fs.rmSync(oraclePath, { force: true });

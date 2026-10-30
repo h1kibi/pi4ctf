@@ -1,0 +1,53 @@
+{
+  "claimType": "time-based",
+  "cases": [
+    {
+      "name": "script-sleep-without-target",
+      "expected": "rejected",
+      "target": null,
+      "durationsMs": [10, 10, 10, 30, 30, 30],
+      "httpStatuses": [200, 200, 200, 200, 200, 200],
+      "reason": "one non-empty target"
+    },
+    {
+      "name": "timeout-in-probe",
+      "expected": "rejected",
+      "target": "127.0.0.1:8080",
+      "durationsMs": [100, 100, 100, 120000, 120000, 120000],
+      "processFailures": [null, null, null, "timeout", "timeout", "timeout"],
+      "reason": "processFailure=timeout"
+    },
+    {
+      "name": "http-404",
+      "expected": "rejected",
+      "target": "127.0.0.1:8080",
+      "durationsMs": [100, 100, 100, 300, 300, 300],
+      "httpStatuses": [200, 200, 200, 404, 404, 404],
+      "reason": "http.status=404"
+    },
+    {
+      "name": "http-500",
+      "expected": "rejected",
+      "target": "127.0.0.1:8080",
+      "durationsMs": [100, 100, 100, 300, 300, 300],
+      "httpStatuses": [200, 200, 200, 500, 500, 500],
+      "reason": "http.status=500"
+    },
+    {
+      "name": "odd-sample",
+      "expected": "rejected",
+      "target": "127.0.0.1:8080",
+      "durationsMs": [100, 100, 100, 300, 300, 300, 300],
+      "httpStatuses": [200, 200, 200, 200, 200, 200, 200],
+      "reason": "even number"
+    },
+    {
+      "name": "below-threshold",
+      "expected": "rejected",
+      "target": "127.0.0.1:8080",
+      "durationsMs": [100, 100, 100, 150, 150, 150],
+      "httpStatuses": [200, 200, 200, 200, 200, 200],
+      "reason": "< 2"
+    }
+  ]
+}

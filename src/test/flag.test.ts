@@ -181,6 +181,19 @@ test('case.configure repairs flagFormat and pins a new oracle', async () => {
   }
 });
 
+test('flag throws on corrupt outcome state instead of treating it as real', async () => {
+  const { tp, factId } = await solvedProject();
+  try {
+    fs.writeFileSync(path.join(tp.project.ctfDir, 'outcomes', 'cmd-9999.json'), '{broken');
+    assert.throws(
+      () => submitFlag(tp.project, new Ledger(tp.project), { value: tp.flag, evidenceRefs: [factId] }),
+      SyntaxError,
+    );
+  } finally {
+    tp.cleanup();
+  }
+});
+
 test('format layer: non-matching flag rejected, no flag.txt', async () => {
   const { tp, factId } = await solvedProject();
   try {
