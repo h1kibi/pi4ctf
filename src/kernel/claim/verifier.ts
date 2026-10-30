@@ -213,6 +213,19 @@ export class ClaimVerifier {
     const result = this.runPredicate(predicate, claim, ctx);
 
     if (result.verdict === 'accepted') {
+      // Timing is a statistical signal, not a code-owned causal proof. Keep
+      // the claim as exploration evidence and never let it mint a Fact or
+      // satisfy the flag evidence layer.
+      if (predicate.id === 'time.delta@1.0.0') {
+        claim.state = 'interpreted';
+        this.ledger.saveClaim(claim);
+        this.project.appendEvent('claim.interpreted', 'kernel', {
+          id: claim.id,
+          predicate: predicate.id,
+          reason: 'time-based evidence is not a Fact',
+        });
+        return claim;
+      }
       const scriptDeclared = claim.refs.some((r) => {
         const e = this.ledger.getEvidence(r);
         return e.kind === 'item' && e.item?.provenance === 'script-declared';

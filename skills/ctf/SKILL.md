@@ -160,7 +160,7 @@ The kernel checks `text == shaped[start:end]`. If it rejects, do not resubmit th
 signature; produce new evidence.
 
 Use `differential` only for two legs of the same command template against the same target.
-Use `time-based` only with an even number (>=6) of clean runs of the same template against the project's declared target; at least 3 baseline + 3 probe runs. A project without a declared target cannot use `time-based`.
+Use `time-based` only with an even number (>=6) of clean runs of the same template against the project's declared target; at least 3 baseline + 3 probe runs. A project without a declared target cannot use `time-based`. A successful timing claim is interpreted evidence, not a Fact, and cannot satisfy the flag evidence layer.
 
 ## session rules
 

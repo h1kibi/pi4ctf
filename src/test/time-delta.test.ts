@@ -10,7 +10,7 @@ import { makeProject, type TestProject } from './helpers.js';
 
 interface TimeCase {
   name: string;
-  expected: 'accepted' | 'rejected';
+  expected: 'interpreted' | 'rejected';
   target: string | null;
   durationsMs: number[];
   httpStatuses?: Array<number | null>;
@@ -107,7 +107,7 @@ test('time.delta requires a declared project target', () => {
   }
 });
 
-test('time.delta accepts fixed 2x median and rejects every dirty shape', () => {
+test('time.delta yields interpreted evidence for fixed 2x median and rejects every dirty shape', () => {
   const tp = makeProject({ target: { host: '127.0.0.1', port: 8080 } });
   try {
     const verifier = new ClaimVerifier(tp.project, new Ledger(tp.project));
@@ -134,6 +134,7 @@ test('time.delta accepts fixed 2x median and rejects every dirty shape', () => {
         }
       }
     }
+    assert.equal(new Ledger(tp.project).listFacts().length, 0, 'time-based must not mint a Fact');
   } finally {
     tp.cleanup();
   }
