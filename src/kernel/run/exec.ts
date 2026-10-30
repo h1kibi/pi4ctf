@@ -7,7 +7,6 @@
  * before spawn.
  */
 import { Buffer } from 'node:buffer';
-import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { KernelError } from '../error.js';
@@ -15,22 +14,18 @@ import { atomicWriteFile, sha256 } from '../fsutil.js';
 import { Project } from '../project.js';
 import { classify, commandClassOf, contractFor, statusFailureClass, targetOf } from '../classify/classify.js';
 import { canonicalKey, routeSignature, signature } from '../shape/signature.js';
-import { shape } from '../shape/shape.js';
-import { baseEnv } from '../sysutil.js';
 import { checkRunScope } from '../security.js';
 import { targetFromEnv, targetRef } from '../target.js';
 import { Ledger } from '../ledger/store.js';
 import { parseEvidenceItems, type ItemSummary } from '../evidence/items.js';
 import { CookieJar, performHttp, type HttpProbeSpec } from '../http/client.js';
-import type { EvidenceItem, ItemIndex, ProcessOutcome, SemanticFailure, StreamInfo, TargetSpec } from '../types.js';
+import type { EvidenceItem, ItemIndex, ProcessOutcome, SemanticFailure, TargetSpec } from '../types.js';
 import { prepareDocker, prepareHost, type ExecHost, type Prepared, type RunRequest } from './prepare.js';
+import { runRaw, type RawRun } from './process.js';
+import { emptyStream, hasFilterStage, safeProbeLabel, streamInfo, stripHostNoise } from './stream.js';
 
 export const DEFAULT_TIMEOUT_MS = 120_000;
 export const MAX_TIMEOUT_MS = 600_000;
-export const ARTIFACT_CAP = 64 * 1024 * 1024;
-const STDIN_CAP = 1024 * 1024;
-const GRACE_MS = 2_000;
-const EXCERPT_CHARS = 1536;
 
 export interface ProbeSpec {
   label?: string;
@@ -88,201 +83,29 @@ export function execHostOf(project: Project): ExecHost {
 // Tree kill: process group on POSIX, taskkill /T on Windows.
 // ---------------------------------------------------------------------------
 
-function killTree(pid: number, signal: 'SIGTERM' | 'SIGKILL'): void {
-  if (process.platform === 'win32') {
-    spawn('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore' });
-  } else {
-    try {
-      process.kill(-pid, signal);
-    } catch {
-      try {
-        process.kill(pid, signal);
-      } catch {
-        /* already gone */
-      }
-    }
-  }
-}
 
-interface RawRun {
-  exit: number | null;
-  signal: string | null;
-  timedOut: boolean;
-  durationMs: number;
-  stdout: Buffer;
-  stderr: Buffer;
-  outputTruncated: boolean;
-}
 
-function runRaw(prep: Prepared, timeoutMs: number, stdin: string | undefined): Promise<RawRun> {
-  // Validate stdin BEFORE spawning so an oversized input never leaves an
-  // orphan child (review R10).
-  if (stdin !== undefined && Buffer.byteLength(stdin) > STDIN_CAP) {
-    return Promise.reject(new KernelError('LIMIT', `stdin exceeds ${STDIN_CAP} bytes`));
-  }
-  return new Promise((resolve, reject) => {
-    const started = Date.now();
-    const child = spawn(prep.argv[0], prep.argv.slice(1), {
-      cwd: prep.cwd,
-      env: { ...baseEnv(), ...prep.env },
-      detached: process.platform !== 'win32',
-      stdio: ['pipe', 'pipe', 'pipe'],
-      windowsHide: true,
-    });
-    let timedOut = false;
-    let settled = false;
-    // Chunk arrays: concat once at the end (review R10).
-    const outChunks: Buffer[] = [];
-    const errChunks: Buffer[] = [];
-    let total = 0;
-    let outputTruncated = false;
 
-    const capture = (buf: Buffer, which: 'out' | 'err') => {
-      if (total >= ARTIFACT_CAP) {
-        outputTruncated = true;
-        return;
-      }
-      const room = ARTIFACT_CAP - total;
-      const slice = buf.subarray(0, room);
-      total += slice.length;
-      if (which === 'out') outChunks.push(slice);
-      else errChunks.push(slice);
-    };
 
-    child.stdout?.on('data', (d: Buffer) => capture(d, 'out'));
-    child.stderr?.on('data', (d: Buffer) => capture(d, 'err'));
-    // Pipe errors (EPIPE when the child exits early) must not crash the kernel.
-    child.stdout?.on('error', () => {});
-    child.stderr?.on('error', () => {});
-    child.stdin?.on('error', () => {});
 
-    const timer = setTimeout(() => {
-      timedOut = true;
-      try {
-        child.kill('SIGTERM');
-      } catch {
-        /* ignore */
-      }
-      killTree(child.pid ?? 0, 'SIGTERM');
-      setTimeout(() => {
-        if (!settled && child.exitCode === null) killTree(child.pid ?? 0, 'SIGKILL');
-      }, GRACE_MS).unref();
-    }, timeoutMs);
-
-    if (stdin !== undefined) {
-      child.stdin?.write(stdin);
-    }
-    child.stdin?.end();
-
-    child.on('error', (err) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      reject(new KernelError('NOT_FOUND', `spawn failed: ${err.message}`));
-    });
-
-    child.on('close', (code, signal) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      resolve({
-        exit: code,
-        signal: signal ?? null,
-        timedOut,
-        durationMs: Date.now() - started,
-        stdout: Buffer.concat(outChunks),
-        stderr: Buffer.concat(errChunks),
-        outputTruncated,
-      });
-    });
-  });
-}
 
 // ---------------------------------------------------------------------------
 // exec: run + shape + atomic artifacts + ProcessOutcome + Stage B observation.
 // ---------------------------------------------------------------------------
 
-function streamInfo(
-  id: string,
-  which: 'stdout' | 'stderr',
-  raw: Buffer,
-  rawTruncated: boolean,
-  project: Project,
-): { info: StreamInfo; shaped: string } {
-  const shapedResult = shape(raw);
-  const base = `artifacts/${id}.${which}`;
-  const rawRef = `${base}.raw.log`;
-  const shapedRef = `${base}.shaped.log`;
-  atomicWriteFile(path.join(project.ctfDir, rawRef), raw);
-  atomicWriteFile(path.join(project.ctfDir, shapedRef), shapedResult.shaped);
-  atomicWriteFile(path.join(project.ctfDir, `${base}.meta.json`), JSON.stringify({
-    bytes: raw.length,
-    shapedBytes: Buffer.byteLength(shapedResult.shaped),
-    lines: shapedResult.shaped.split('\n').length - 1,
-    sha256: sha256(raw),
-    encoding: shapedResult.encoding,
-    truncated: shapedResult.truncated,
-    omittedChars: shapedResult.omittedChars,
-    // capture-level cap hit (distinct from shape windowing) — review R4
-    outputTruncated: rawTruncated,
-  }, null, 2));
-  return {
-    info: {
-      sha256: sha256(raw),
-      bytes: raw.length,
-      rawRef,
-      shapedRef,
-      excerpt: shapedResult.shaped.slice(0, EXCERPT_CHARS),
-      encoding: shapedResult.encoding,
-      truncated: shapedResult.truncated,
-      outputTruncated: rawTruncated,
-    },
-    shaped: shapedResult.shaped,
-  };
-}
+
 
 /** A filter stage makes empty stdout a legitimate result (`grep` no match),
  *  not a broken probe. Only command-mode shell pipelines need this. */
-function hasFilterStage(command: string | undefined): boolean {
-  return !!command && /\|\s*(?:grep|egrep|fgrep|rg|sed|awk|head|tail|jq|cut|sort|uniq|wc|tr)\b/.test(command);
-}
+
 
 /** WSL's bash.exe prints a UTF-16 localhost-proxy warning to stderr before the
  *  command runs. It is host noise, not challenge evidence. */
-function stripHostNoise(buf: Buffer): Buffer {
-  if (buf.length === 0) return buf;
-  const text = buf.toString('utf16le');
-  if (!/^wsl:/im.test(text)) return buf;
-  return Buffer.from(
-    text
-      .split(/\r?\n/)
-      .filter((line) => !/^wsl:/i.test(line))
-      .join('\n'),
-    'utf16le',
-  );
-}
 
-function safeProbeLabel(value: string | undefined): string {
-  return String(value ?? '').replace(/[^\x20-\x7E]/g, '?').slice(0, 64);
-}
 
-function emptyStream(id: string, which: 'stdout' | 'stderr', project: Project): StreamInfo {
-  const base = `artifacts/${id}.${which}`;
-  const rawRef = `${base}.raw.log`;
-  const shapedRef = `${base}.shaped.log`;
-  atomicWriteFile(path.join(project.ctfDir, rawRef), Buffer.alloc(0));
-  atomicWriteFile(path.join(project.ctfDir, shapedRef), '');
-  return {
-    sha256: sha256(Buffer.alloc(0)),
-    bytes: 0,
-    rawRef,
-    shapedRef,
-    excerpt: '',
-    encoding: 'utf8',
-    truncated: false,
-    outputTruncated: false,
-  };
-}
+
+
+
 
 /** Kernel-executed probe batch: one budget slot, up to 16 independently
  *  classified child items. Unlike evidence/1 script items, these items are
