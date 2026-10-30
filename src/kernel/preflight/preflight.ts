@@ -1,168 +1,37 @@
 /**
- * Challenge preflight: static ELF/libc metadata, no model strategy.
+ * Challenge preflight recorder.
  *
- * The kernel owns this scan because the same bytes must produce the same
- * chal.json regardless of which model is driving the case. It intentionally
- * does not run readelf/checksec: those tools are absent on Windows hosts and
- * differ between images. File discovery and format classification live in
- * ./files.ts; the pure ELF parser lives in ./elf.ts; this module owns libc
- * classification and chal.json writes.
+ * The provider scans the challenge root and returns kernel-owned metadata.
+ * This module validates that shape, computes root/generated views, writes
+ * chal.json, audits the event, and provides packet digest helpers.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { atomicWriteFile, sha256 } from '../fsutil.js';
+import { atomicWriteFile } from '../fsutil.js';
+import { KernelError } from '../error.js';
 import { Project } from '../project.js';
 import type { TargetSpec } from '../types.js';
-import { elfMagic, isLibcName, libcVersion, looksLikeInterpreter, parseElf, type ElfInfo } from './elf.js';
-import {
-  analyzeOther,
-  detectFormat,
-  generatedPath,
-  readIgnore,
-  relPosix,
-  safeReadFile,
-  walk,
-  type OtherFile,
-} from './files.js';
+import type {
+  ChallengeMetadata,
+  ChallengeScan,
+  PreflightResult,
+} from './types.js';
 
-const MAX_OTHER_FILES = 256;
-
-export interface ChallengeFile {
-  path: string;
-  bytes: number;
-  sha256: string;
-  generated?: boolean;
-  mtimeMs?: number;
-  elf: ElfInfo;
-}
-
-export interface LibcInfo {
-  path: string;
-  bytes: number;
-  sha256: string;
-  buildId: string | null;
-  version: string | null;
-  soname: string | null;
-  interpreter: boolean;
-}
-
-export interface ChallengeMetadata {
-  endpoint: TargetSpec | null;
-  files: ChallengeFile[];
-  libc: LibcInfo[];
-  otherFiles: OtherFile[];
-  otherFilesTotal?: number;
-  otherFilesTruncated?: boolean;
-  notes: string[];
-}
-
-export interface PreflightResult {
-  path: string;
-  endpoint: TargetSpec | null;
-  files: ChallengeFile[];
-  libc: LibcInfo[];
-  otherFiles: OtherFile[];
-  otherFilesTotal: number;
-  otherFilesTruncated: boolean;
-  rootFiles: string[];
-  generated: string[];
-  notes: string[];
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-export function preflight(project: Project, opts: { includeWorkspace?: boolean; includeBuild?: boolean } = {}): PreflightResult {
-  const includeWorkspace = opts.includeWorkspace === true;
-  const includeBuild = opts.includeBuild === true;
-  const { files: candidates, notes } = walk(project.root, readIgnore(project.root), includeWorkspace, includeBuild);
+export function recordPreflight(project: Project, scan: ChallengeScan): PreflightResult {
   const endpoint = project.file().target ?? null;
-  const files: ChallengeFile[] = [];
-  const libc: LibcInfo[] = [];
-  const otherFiles: OtherFile[] = [];
-  let otherFilesTotal = 0;
-  for (const abs of candidates) {
-    const rel = relPosix(project.root, abs);
-    const buf = safeReadFile(abs);
-    if (!buf) continue;
-    const generated = generatedPath(rel);
-    let mtimeMs = 0;
-    try { mtimeMs = fs.statSync(abs).mtimeMs; } catch { /* keep 0 */ }
-    if (!elfMagic(buf)) {
-      otherFilesTotal++;
-      if (otherFiles.length < MAX_OTHER_FILES) {
-        const detected = detectFormat(buf, path.basename(abs));
-        otherFiles.push({
-          path: rel,
-          bytes: buf.length,
-          sha256: sha256(buf),
-          generated,
-          mtimeMs,
-          ...analyzeOther(buf, detected),
-        });
-      }
-      continue;
-    }
-    const info = parseElf(buf);
-    if (!info) {
-      notes.push(`unparsable ELF: ${rel}`);
-      continue;
-    }
-    const entry: ChallengeFile = {
-      path: rel,
-      bytes: buf.length,
-      sha256: sha256(buf),
-      generated,
-      mtimeMs,
-      elf: info,
-    };
-    files.push(entry);
-    const name = path.basename(abs);
-    if (isLibcName(name) || info.soname === 'libc.so.6') {
-      libc.push({
-        path: rel,
-        bytes: buf.length,
-        sha256: entry.sha256,
-        buildId: info.buildId,
-        version: libcVersion(buf),
-        soname: info.soname,
-        interpreter: looksLikeInterpreter(name),
-      });
-    }
+  const { files, libc, otherFiles, otherFilesTotal, notes } = scan;
+  if (!Array.isArray(files) || !Array.isArray(libc) || !Array.isArray(otherFiles) || !Array.isArray(notes)) {
+    throw new KernelError('INTERNAL', 'invalid preflight scan: expected arrays');
   }
-  if (files.length === 0) notes.push('no ELF files found');
-  if (otherFilesTotal > otherFiles.length) {
-    notes.push(`other file cap reached: indexed ${otherFiles.length}/${otherFilesTotal}; rootFiles reflects indexed files only`);
-  }
+  const otherFilesTruncated = otherFilesTotal > otherFiles.length;
   const allFiles = [...files, ...otherFiles];
-  const rootFiles = allFiles.filter((f) => !f.generated).sort((a, b) => (a.mtimeMs ?? 0) - (b.mtimeMs ?? 0) || a.path.localeCompare(b.path)).map((f) => f.path);
-  const generatedList = allFiles.filter((f) => f.generated).map((f) => f.path);
+  const rootFiles = allFiles
+    .filter((f) => !f.generated)
+    .sort((a, b) => (a.mtimeMs ?? 0) - (b.mtimeMs ?? 0) || a.path.localeCompare(b.path))
+    .map((f) => f.path);
+  const generated = allFiles.filter((f) => f.generated).map((f) => f.path);
   const outPath = path.join(project.ctfDir, 'chal.json');
+
   try {
     const previous = JSON.parse(fs.readFileSync(outPath, 'utf8')) as ChallengeMetadata;
     const previousRoot = new Set(
@@ -177,13 +46,14 @@ export function preflight(project: Project, opts: { includeWorkspace?: boolean; 
   } catch {
     // First preflight (or an unreadable old file): no baseline to compare.
   }
+
   const metadata: ChallengeMetadata = {
     endpoint,
     files,
     libc,
     otherFiles,
     otherFilesTotal,
-    otherFilesTruncated: otherFilesTotal > otherFiles.length,
+    otherFilesTruncated,
     notes,
   };
   atomicWriteFile(outPath, JSON.stringify(metadata, null, 2));
@@ -199,9 +69,9 @@ export function preflight(project: Project, opts: { includeWorkspace?: boolean; 
     libc,
     otherFiles,
     otherFilesTotal,
-    otherFilesTruncated: otherFilesTotal > otherFiles.length,
+    otherFilesTruncated,
     rootFiles,
-    generated: generatedList,
+    generated,
     notes,
   };
 }

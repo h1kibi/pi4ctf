@@ -5,7 +5,8 @@ import { Ledger } from '../../kernel/ledger/store.js';
 import { compilePacket, writeHandoff } from '../../kernel/context/packet.js';
 import { ingestArtifact } from '../../kernel/artifact/ingest.js';
 import { readAcceptedFlag } from '../../kernel/flag/flag.js';
-import { preflight } from '../../kernel/preflight/preflight.js';
+import { recordPreflight } from '../../kernel/preflight/preflight.js';
+import { scanChallenge } from '../../providers/preflight/scan.js';
 import { readProcess, type ProcAction } from '../../kernel/proc/proc.js';
 import { parseTarget } from '../../kernel/target.js';
 import { recordSolve } from '../../kernel/stats.js';
@@ -257,10 +258,11 @@ export async function handleCase(req: Request, op: string, input: Record<string,
     }
     case 'case.preflight': {
       const project = needRoot(req);
-      const result = preflight(project, {
+      const scan = scanChallenge(project.root, {
         includeWorkspace: input.includeWorkspace === true,
         includeBuild: input.includeBuild === true,
       });
+      const result = recordPreflight(project, scan);
       return ok(op, {
         path: path.relative(project.root, result.path).split(path.sep).join('/'),
         endpoint: result.endpoint,

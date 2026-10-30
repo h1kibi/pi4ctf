@@ -85,7 +85,7 @@ pi host
 - **pi**：推理、工具调用、UI；
 - **kernel**：状态、执行、证据、上下文投影；
 - **adapter**：只接线，不写状态；
-- **providers**：宿主/用户级环境事实（`env_memory`、镜像探测）在 `src/providers/`，不进入 kernel；kernel 只接收已渲染的环境摘要。
+- **providers**：宿主/用户级能力在 `src/providers/`，不进入 kernel。`env_memory` 提供环境事实；preflight provider 扫描挑战文件并返回 kernel 定义的 `ChallengeScan` schema。kernel 只接收已渲染摘要或已校验扫描结果，负责状态、`chal.json` 与 digest。
 
 当前 TS 实现的 adapter 采用静态 handler 分层，不引入动态注册表：
 
