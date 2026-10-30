@@ -27,7 +27,7 @@
 | 状态 | `.ctf/`：events + artifacts + projections | 不变（文件即状态，无 daemon / DB） |
 | UI | `ctx.ui.notify` 文本提示 + `/ctf` 子命令 | TUI：状态文本 + HUD + 卡片 + `/ctf` overlay（只读） |
 | 记忆 | `env_memory`（宿主级环境事实） | 文件型 verified lesson（`memory-design.md`，later） |
-| 验证 | `npm test`：221 测试 / 216 通过 / 5 跳过（Windows 无 PTY；Docker pwn 测试需本机镜像） | Rust 性能指标：<5 MB、<20 ms 冷启动、RSS <32 MB |
+| 验证 | `npm test`：224 测试 / 219 通过 / 5 跳过（Windows 无 PTY；Docker pwn 测试需本机镜像） | Rust 性能指标：<5 MB、<20 ms 冷启动、RSS <32 MB |
 
 `docs/` 里标 `later` 或写“目标”的内容都**不代表已经存在**；代码里没有的东西不要当能力用。
 
@@ -167,7 +167,7 @@ pi mcp list --json   # 机器可读状态
 ### 已安装状态
 
 安装方式：`pi install <pi4ctf-package>`；安装后 `pi list` 应显示该 package。
-Pwn 使用显式 `dockerImage`（`run`/`session`/`gdb` 都在容器内）；Docker pwn smoke 覆盖 pwntools 连宿主机 target、session cwd、容器 `proc` 和 GDB/MI 断点/context。
+Pwn 使用显式 `dockerImage`（`run`/`session`/`gdb` 都在容器内）；Docker pwn smoke 覆盖 pwntools 连宿主机 target、session cwd、容器 `proc` 和 GDB/MI 断点/context。host backend 在非 Linux 宿主的 packet 会明确提示 ELF 需要 WSL/Docker。
 当前限制：Docker TTY 只在 POSIX 宿主可用，Windows 的 Docker CLI 不能通过 pipe 挂 TTY；host session 的 PTY 也只在 POSIX；Kali 全量镜像尚未实机构建。
 
 ## 形态（当前）
@@ -250,7 +250,7 @@ flowchart LR
 - 网络错误（ECONNREFUSED/Connection refused/连接超时/ECONNRESET 等）会标记 `semanticFailure=target-unreachable`，归入 environment incidents，不进入利用路线的负账本；packet 把 environment incidents 和 route dead ends 分开展示。
 - `run.synthetic=true`（或 `artifact_ingest.synthetic=true`）标记 dry-run；synthetic claim/fact 不进 packet 统计、不能 `case.complete`、不能给真实 flag 做 evidence。
 - preflight 默认忽略 `core*`、`*.core`、`*.zip/tar/tgz/7z/rar`、`workspace/`，并支持 `.ctfignore`；对非 ELF 做格式识别与轻量摘要（PE/Mach-O 的 arch/entry、Java class major、ZIP/JAR/APK 条目、PCAP linktype）并在 `otherFiles` 记录；`chal.json` 保存 cap 内索引，packet 只给总数/附件/生成物摘要。
-- preflight 把题目根目录下的新文件视为附件材料；agent 生成物统一放 per-case workspace：容器模式是 `test/workspace/<caseId>/`，Docker 内挂到 `/challenge/workspace`；host 模式使用 `project.status.workspace` 的绝对路径，`run.cwd: "workspace"`（或 `"workspace/sub"`）会映射到该目录。`workspace/` 默认不扫描。`case_preflight includeWorkspace=true` 才会扫描 workspace，`includeBuild=true` 才会扫描 `build/out/dist/target/obj/__pycache__/screenshots/shots`；两者都优先于根目录占用文件名额。
+- preflight 把题目根目录下的新文件视为附件材料；agent 生成物统一放 per-case workspace：容器模式是 `test/workspace/<caseId>/`，Docker 内挂到 `/challenge/workspace`；host 模式使用 `project.status.workspace` 的绝对路径，`run.cwd: "workspace"`（或 `"workspace/sub"`）会映射到该目录；`workspace/<caseId>` 也归一化为 workspace，避免重复拼接。`workspace/` 默认不扫描。`case_preflight includeWorkspace=true` 才会扫描 workspace，`includeBuild=true` 才会扫描 `build/out/dist/target/obj/__pycache__/screenshots/shots`；两者都优先于根目录占用文件名额。
 - preflight 只按路径分类：`workspace/` 和 `includeBuild=true` 的输出目录是 `generated`；根目录文件一律是 `root files`，不按后缀/mtime 猜测。**生成物必须放 workspace/ 或 build/ 等输出目录；放 root 会混进 unclassified rootFiles。** 文件数达到 cap 会写 `file cap reached` note。
 - Observation 由 `run`/`session` 自动产出；claim 必须带 quote，quote 可只给 text（内核定位唯一 substring），也可显式给 span；Fact 由内核验证。
 - `artifact_ingest` 支持 `transform=hex|base64`，记录 sourceSha256 + derivedFrom，派生 artifact 可继续走 claim/flag。oracle 与 `.ctf/` 一律拒绝，防止把 ground truth 或状态文件复制成证据。

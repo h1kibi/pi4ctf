@@ -75,6 +75,37 @@ test('packet delta: excluded outcome ids are not re-injected', async () => {
   }
 });
 
+test('packet hides outcomes from another target and marks a stale plan', async () => {
+  const tp = makeProject({ target: { host: '127.0.0.1', port: 1 } });
+  try {
+    const local = await runExec(tp.project, { argv: [NODE, '-e', 'console.log("local")'] });
+    const foreign = await runExec(tp.project, {
+      argv: [NODE, '-e', 'console.log("foreign")'],
+      target: { host: 'example.test', port: 2 },
+    });
+    tp.project.writePlan({ chain: [], next: 'solve the web challenge', preconditions: [], target: 'example.test:2' });
+    const packet = compilePacket(tp.project, new Ledger(tp.project));
+    assert.equal(packet.text.includes(`### ${foreign.outcome.id}`), false);
+    assert.equal(packet.text.includes(`### ${local.outcome.id}`), true);
+    assert.match(packet.text, /foreign-target outcomes hidden: 1/);
+    assert.match(packet.text, /## Plan \(stale target/);
+    assert.match(packet.text, /stale target: example\.test:2 \(current 127\.0\.0\.1:1\)/);
+  } finally {
+    tp.cleanup();
+  }
+});
+
+test('packet warns that host ELF execution needs WSL/Docker on non-Linux', async () => {
+  if (process.platform === 'linux') return;
+  const tp = makeProject({ backend: 'host' });
+  try {
+    const packet = compilePacket(tp.project, new Ledger(tp.project));
+    assert.match(packet.text, /host runtime: .*ELF execution requires WSL or Docker/);
+  } finally {
+    tp.cleanup();
+  }
+});
+
 test('handoff writes progress.md with resume pointer', async () => {
   const tp = makeProject();
   try {

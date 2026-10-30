@@ -6,6 +6,7 @@ export function readPlanBlock(filePath: string): PlanBlock {
     chain: [],
     next: '',
     preconditions: [],
+    target: null,
   };
 }
 
@@ -14,5 +15,6 @@ export function normalizePlan(plan: PlanBlock): PlanBlock {
     chain: plan.chain.slice(0, 8).map((step) => step.slice(0, 200)),
     next: plan.next.slice(0, 300),
     preconditions: plan.preconditions.slice(0, 5).map((item) => item.slice(0, 150)),
+    target: plan.target ?? null,
   };
 }

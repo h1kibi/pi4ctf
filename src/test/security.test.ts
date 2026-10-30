@@ -113,6 +113,11 @@ test('case.close cannot bypass the verified-Fact completion gate', async () => {
   }
 });
 
+test('WSL wrapper is an opaque exec-local script', () => {
+  assert.equal(commandClassOf(['wsl', '-e', 'bash', '-lc', 'echo x']), 'exec-local');
+  assert.equal(commandClassOf(['bash', '-lc', 'echo x']), 'generic');
+});
+
 test('commandExists treats metacharacters as a literal name', () => {
   assert.equal(commandExists('node & echo PI4CTF_INJECTED'), false);
 });
@@ -386,6 +391,11 @@ test('host runs map cwd=workspace to the case workspace', () => {
     assert.ok(first);
     const prepared = prepareHost(execHostOf(first.project), { argv: ['true'], cwd: 'workspace' });
     assert.equal(prepared.cwd, first.project.workspace);
+    const shown = prepareHost(execHostOf(first.project), {
+      argv: ['true'],
+      cwd: `workspace/${path.basename(first.project.workspace)}`,
+    });
+    assert.equal(shown.cwd, first.project.workspace);
     assert.throws(
       () => prepareHost(execHostOf(first.project), { argv: ['true'], cwd: 'workspace/../escape' }),
       /path escapes/,

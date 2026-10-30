@@ -328,6 +328,8 @@ export interface PlanBlock {
   chain: string[];
   next: string;
   preconditions: string[];
+  /** Target snapshot when this plan was written; stale after target switch. */
+  target?: string | null;
 }
 
 export interface EventRecord {

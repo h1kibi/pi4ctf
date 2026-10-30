@@ -89,7 +89,13 @@ function resolveRunCwd(host: ExecHost, cwd: string): string {
   const normalized = cwd.replace(/\\/g, '/');
   if (normalized === 'workspace' || normalized.startsWith('workspace/')) {
     const rest = normalized.slice('workspace'.length).replace(/^\/+/, '');
-    return rest ? resolveInside(host.workspace, rest) : host.workspace;
+    if (!rest) return host.workspace;
+    // Accept the path shown by project.status (`workspace/<caseId>`) as the
+    // workspace itself instead of resolving it to workspace/<caseId>/<caseId>.
+    const caseId = path.basename(host.workspace);
+    const parts = rest.split('/');
+    const tail = parts[0] === caseId ? parts.slice(1).join('/') : rest;
+    return tail ? resolveInside(host.workspace, tail) : host.workspace;
   }
   return resolveInside(host.root, cwd);
 }

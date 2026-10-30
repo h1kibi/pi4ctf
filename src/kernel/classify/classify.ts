@@ -39,8 +39,9 @@ export function commandClassOf(argv: string[]): string {
   const program = (raw.split(/[\\/]/).pop() ?? '').toLowerCase().replace(/\.exe$/, '');
   const mapped = PROGRAM_CLASS[program];
   if (mapped) return mapped;
-  // python/perl/ruby running a script: exec-local
-  if (['python', 'python3', 'perl', 'ruby', 'node'].includes(program)) return 'exec-local';
+  // Opaque script wrappers: python/perl/ruby and the Windows WSL launcher.
+  // Their exit codes are not a reliable route dead-end signal.
+  if (['python', 'python3', 'perl', 'ruby', 'node', 'wsl'].includes(program)) return 'exec-local';
   if (['strings', 'file', 'xxd', 'objdump', 'readelf', 'radare2', 'r2'].includes(program)) return 'binary-inspect';
   return 'generic';
 }

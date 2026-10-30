@@ -9,7 +9,7 @@ import { readAcceptedFlag } from '../../kernel/flag/flag.js';
 import { recordPreflight } from '../../kernel/preflight/preflight.js';
 import { scanChallenge } from '../../providers/preflight/scan.js';
 import { readProcess, type ProcAction } from '../../kernel/proc/proc.js';
-import { parseTarget } from '../../kernel/target.js';
+import { parseTarget, targetRef } from '../../kernel/target.js';
 import { recordSolve } from '../../kernel/stats.js';
 import { DEFAULT_FLAG_FORMAT } from '../../kernel/flag/format.js';
 import { assertCaseBudget } from '../../kernel/budget.js';
@@ -167,12 +167,18 @@ export async function handleCase(req: Request, op: string, input: Record<string,
     case 'case.map': {
       const project = needRoot(req);
       const ledger = new Ledger(project);
+      const file = project.file();
+      const target = targetRef(file.target ?? null);
+      const recent = ledger.recentOutcomes(8).filter((outcome) =>
+        target === null || outcome.target === null ||
+        (outcome.target === target && (outcome.instanceId ?? '') === (file.target?.instanceId ?? '')),
+      );
       return ok(op, {
         status: project.status(),
         plan: project.readPlan(),
         claims: ledger.openClaims(),
         negatives: ledger.listNegatives(),
-        recent: ledger.recentOutcomes(8),
+        recent,
       });
     }
     case 'case.plan': {

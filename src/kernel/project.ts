@@ -27,7 +27,7 @@ import { KernelError } from './error.js';
 import { allocateCommand } from './commands.js';
 import { appendEventRecord, lastFormatChange as readLastFormatChange } from './events.js';
 import { normalizePlan, readPlanBlock } from './plan.js';
-import { normalizeTarget, sameTarget } from './target.js';
+import { normalizeTarget, sameTarget, targetRef } from './target.js';
 import { oracleBindingError, oracleFileHash, readOracle } from './oracle.js';
 import type { EventRecord, PlanBlock, ProjectFile, TargetSpec } from './types.js';
 
@@ -476,7 +476,10 @@ export class Project {
   // -- plan block -----------------------------------------------------------
 
   writePlan(plan: PlanBlock): void {
-    const bounded = normalizePlan(plan);
+    const bounded = normalizePlan({
+      ...plan,
+      target: plan.target === undefined ? targetRef(this.file().target ?? null) : plan.target,
+    });
     atomicWriteFile(path.join(this.ctfDir, 'plan.json'), JSON.stringify(bounded, null, 2));
     this.appendEvent('plan.update', 'adapter', { next: bounded.next });
   }
