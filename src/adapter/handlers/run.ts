@@ -73,7 +73,7 @@ export async function handleRun(req: Request, op: string, input: Record<string, 
             condemnedBy: null,
             unblockOn: spec.unblockOn,
             expiresAt: spec.ttlMs === null ? null : Date.now() + spec.ttlMs,
-            blockScope: 'route',
+            blockScope: spec.family === 'environment' ? 'environment' : 'route',
             artifactRef: failure.artifactRef,
             route: null,
           });
@@ -136,11 +136,12 @@ export async function handleRun(req: Request, op: string, input: Record<string, 
       // Stage C on the run path: failed outcomes enter the negative ledger
       // with code-owned classes (docs/design.md §4.2, ADR 0002 §4).
       const obs = ledger.getObservation(outcome.id);
+      const shellCommand = typeof input.command === 'string';
       // exec-local is an opaque script (`python -c`, `node -e`, ...). Its
       // normalized signature collapses different programs to one route, so a
       // timeout/nonzero from one script must not condemn the shape. The model
       // still sees the ProcessOutcome; it just does not enter the ledger.
-      if (outcome.intentClass !== 'exec-local' && obs.semanticFailure !== 'target-unreachable' && (outcome.processFailure || obs.semanticFailure)) {
+      if (!shellCommand && outcome.intentClass !== 'exec-local' && obs.semanticFailure !== 'target-unreachable' && (outcome.processFailure || obs.semanticFailure)) {
         const spec = negativeSpecFor(outcome.processFailure, obs.semanticFailure);
         ledger.addNegative({
           signature: key,
@@ -150,7 +151,7 @@ export async function handleRun(req: Request, op: string, input: Record<string, 
           condemnedBy: null,
           unblockOn: spec.unblockOn,
           expiresAt: spec.ttlMs === null ? null : Date.now() + spec.ttlMs,
-          blockScope: 'route',
+          blockScope: spec.family === 'environment' ? 'environment' : 'route',
           artifactRef: outcome.stdout.rawRef,
           route: null,
         });

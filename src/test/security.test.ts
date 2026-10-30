@@ -405,6 +405,19 @@ test('host runs map cwd=workspace to the case workspace', () => {
   }
 });
 
+test('case.restart clears a plan written for another target', async () => {
+  const tp = makeProject();
+  try {
+    tp.project.writePlan({ chain: [], next: 'solve the web challenge', preconditions: [], target: 'old.example:1' });
+    const res = await dispatch({ op: 'case.restart', root: tp.root });
+    assert.equal(res.ok, true);
+    assert.equal(res.ok ? (res.data as { planCleared?: boolean }).planCleared : false, true);
+    assert.equal(tp.project.readPlan().next, '');
+  } finally {
+    tp.cleanup();
+  }
+});
+
 test('case.restart selects a case id, reopens it, clears soft blocks, and has no cap', async () => {
   const box = makeContainerCases();
   try {

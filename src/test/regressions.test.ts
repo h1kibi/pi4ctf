@@ -265,7 +265,24 @@ test('tty-required failure is an environment incident, not a route dead end', as
     const entry = new Ledger(tp.project).listNegatives().find((n) => n.failureClass === 'tty-required');
     assert.ok(entry, 'the tty failure must be recorded');
     assert.equal(entry?.family, 'environment');
+    assert.equal(entry?.blockScope, 'environment');
     assert.equal(entry?.transient, true);
+  } finally {
+    tp.cleanup();
+  }
+});
+
+test('command-mode shell chores do not enter the route ledger', async () => {
+  const tp = makeProject();
+  try {
+    const res = await dispatch({
+      op: 'run',
+      root: tp.root,
+      input: { command: 'echo chore; exit 4', skipTargetCheck: true },
+    });
+    assert.equal(res.ok, true, JSON.stringify(res));
+    assert.equal(res.ok ? res.data.exit : 0, 4);
+    assert.equal(new Ledger(tp.project).listNegatives().length, 0);
   } finally {
     tp.cleanup();
   }
@@ -302,6 +319,7 @@ test('command-not-found is an environment incident, not a route dead end', async
     const entry = new Ledger(tp.project).listNegatives().find((n) => n.failureClass === 'command-not-found');
     assert.ok(entry, 'the missing command must be recorded');
     assert.equal(entry?.family, 'environment');
+    assert.equal(entry?.blockScope, 'environment');
     assert.equal(entry?.transient, true);
     assert.equal(new Ledger(tp.project).listNegatives().some((n) => n.failureClass === 'nonzero-exit'), false);
   } finally {

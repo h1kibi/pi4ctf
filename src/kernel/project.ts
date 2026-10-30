@@ -663,7 +663,7 @@ export class Project {
 
   /** Start a fresh command budget while preserving evidence/claims/facts.
    *  Restart is human-only and deliberately uncapped: each attempt is audited. */
-  restart(): { restarts: number; command: number } {
+  restart(): { restarts: number; command: number; planCleared: boolean } {
     let restarts = 0;
     this.mutateFile((file) => {
       if (file.status !== 'active') {
@@ -675,7 +675,13 @@ export class Project {
       file.counters.restart = restarts;
     });
     this.appendEvent('case.restart', 'adapter', { restart: restarts, command: 0 });
-    return { restarts, command: 0 };
+    const currentTarget = targetRef(this.file().target ?? null);
+    const plan = this.readPlan();
+    const planCleared = (plan.chain.length > 0 || plan.next.length > 0) && plan.target !== currentTarget;
+    if (planCleared) {
+      this.writePlan({ chain: [], next: '', preconditions: [], target: currentTarget });
+    }
+    return { restarts, command: 0, planCleared };
   }
 
   /** Count an automatic target reset attempt; the cap is enforced by the

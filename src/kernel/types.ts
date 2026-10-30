@@ -212,7 +212,7 @@ export interface NegativeEntry {
   condemnedBy: string | null; // predicate id that condemned it
   unblockOn: 'ttl' | 'env_change' | 'probe' | 'probe_version';
   expiresAt: number | null; // epoch ms; null = permanent
-  blockScope: 'route' | 'case';
+  blockScope: 'route' | 'case' | 'environment';
   artifactRef: string | null;
   route: string | null; // claim id
   /** Set once when a TTL entry expires; prevents repeat unblock events. */

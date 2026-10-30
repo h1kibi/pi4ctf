@@ -27,7 +27,7 @@
 | 状态 | `.ctf/`：events + artifacts + projections | 不变（文件即状态，无 daemon / DB） |
 | UI | `ctx.ui.notify` 文本提示 + `/ctf` 子命令 | TUI：状态文本 + HUD + 卡片 + `/ctf` overlay（只读） |
 | 记忆 | `env_memory`（宿主级环境事实） | 文件型 verified lesson（`memory-design.md`，later） |
-| 验证 | `npm test`：224 测试 / 219 通过 / 5 跳过（Windows 无 PTY；Docker pwn 测试需本机镜像） | Rust 性能指标：<5 MB、<20 ms 冷启动、RSS <32 MB |
+| 验证 | `npm test`：226 测试 / 221 通过 / 5 跳过（Windows 无 PTY；Docker pwn 测试需本机镜像） | Rust 性能指标：<5 MB、<20 ms 冷启动、RSS <32 MB |
 
 `docs/` 里标 `later` 或写“目标”的内容都**不代表已经存在**；代码里没有的东西不要当能力用。
 
