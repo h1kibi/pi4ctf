@@ -255,10 +255,9 @@ If `run` returns `LIMIT`, report the exhausted budget to the user and stop; do n
 ```text
 /ctf status
 /ctf handoff
-/ctf plan <next step>
+/ctf map
 /ctf restart
 /ctf continue [prompt]
-/ctf clear-soft
 /ctf configure [flagFormat] [oracleRef] [host|docker] [dockerImage] [target]
 /ctf wp [template] [output]
 ```

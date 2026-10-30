@@ -46,6 +46,7 @@ async function dispatchInner(req: Request): Promise<Response> {
     op === 'case.continue' ||
     op === 'case.configure' ||
     op === 'case.clearNegatives' ||
+    op === 'case.map' ||
     op === 'case.plan' ||
     op === 'case.evidence' ||
     op === 'proc' ||

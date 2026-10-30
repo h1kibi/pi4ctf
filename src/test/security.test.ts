@@ -332,6 +332,56 @@ test('case.clearNegatives clears soft entries without resetting the budget', asy
   }
 });
 
+test('case.map exposes route state and clearNegatives accepts one id', async () => {
+  const tp = makeProject();
+  try {
+    const ledger = new Ledger(tp.project);
+    const a = ledger.addNegative({
+      signature: 'generic|signature@1:map-a',
+      failureClass: 'timeout',
+      transient: true,
+      condemnedBy: null,
+      unblockOn: 'ttl',
+      expiresAt: Date.now() + 600_000,
+      blockScope: 'route',
+      artifactRef: null,
+      route: null,
+    });
+    assert.ok(a.id);
+    ledger.addNegative({
+      signature: 'generic|signature@1:map-b',
+      failureClass: 'server-error',
+      transient: true,
+      condemnedBy: null,
+      unblockOn: 'ttl',
+      expiresAt: Date.now() + 600_000,
+      blockScope: 'route',
+      artifactRef: null,
+      route: null,
+    });
+    tp.project.writePlan({ chain: ['recon', 'exploit'], next: 'find offset', preconditions: ['libc?'] });
+
+    const map = await dispatch({ op: 'case.map', root: tp.root });
+    assert.equal(map.ok, true);
+    const mapData = map.ok ? map.data : undefined;
+    const plan = mapData?.plan;
+    const planNext = typeof plan === 'object' && plan !== null && 'next' in plan ? plan.next : undefined;
+    const negatives = mapData?.negatives;
+    assert.equal(planNext, 'find offset');
+    assert.equal(Array.isArray(negatives) ? negatives.length : -1, 2);
+
+    const cleared = await dispatch({ op: 'case.clearNegatives', root: tp.root, input: { id: a.id } });
+    assert.equal(cleared.ok, true);
+    const clearedCount = cleared.ok && typeof cleared.data.cleared === 'number' ? cleared.data.cleared : 0;
+    assert.equal(clearedCount, 1);
+    const after = new Ledger(tp.project).listNegatives();
+    assert.ok(after.find((n) => n.id === a.id)?.unblockedAt);
+    assert.equal(after.filter((n) => !n.unblockedAt).length, 1);
+  } finally {
+    tp.cleanup();
+  }
+});
+
 test('budget gate: past-deadline project rejects run with TIMEOUT', async () => {
   const tp = makeProject();
   try {

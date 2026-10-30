@@ -28,6 +28,7 @@ import { deepseekSearchTool, deepseekFetchTool, deepseekVisionTool } from "./too
 import { ctfInitTool, runTool, sessionTool, procTool, claimTool, flagTool } from "./tools/core.js";
 import { casePlanTool, artifactIngestTool, casePreflightTool, caseClearNegativesTool, caseConfigureTool, caseEvidenceTool } from "./tools/case.js";
 import { buildWriteupPrompt, resolveWriteup } from "./writeup.js";
+import { ctfMap } from "./map.js";
 
 // /ctf command
 // ---------------------------------------------------------------------------
@@ -66,7 +67,7 @@ function sendPrompt(pi: ExtensionAPI, ctx: ExtensionContext, prompt: string): vo
 
 function ctfCommand(pi: ExtensionAPI): void {
   pi.registerCommand("ctf", {
-    description: "pi4ctf case commands: init/status/handoff/plan/restart/continue/clear-soft/configure/wp",
+    description: "pi4ctf case commands: init/status/handoff/map/restart/continue/configure/wp",
     handler: async (args, ctx) => {
       const words = shellWords(args.trim());
       const sub = (words.shift() ?? "help").toLowerCase();
@@ -78,10 +79,9 @@ function ctfCommand(pi: ExtensionAPI): void {
             "/ctf init [flagFormat] [oracleRef] [host|docker] [category] [dockerImage] [target]",
             "/ctf status",
             "/ctf handoff",
-            "/ctf plan <next>",
+            "/ctf map",
             "/ctf restart",
             "/ctf continue [prompt]",
-            "/ctf clear-soft",
             "/ctf configure [flagFormat] [oracleRef] [host|docker] [dockerImage] [target]",
             "/ctf wp [template-file-or-folder] [output-file]",
           ].join("\n"),
@@ -166,11 +166,9 @@ function ctfCommand(pi: ExtensionAPI): void {
         case "handoff":
           await notifyRt(ctx, "case.handoff", root, {});
           return;
-        case "plan": {
-          const next = words.join(" ").trim();
-          await notifyRt(ctx, "case.plan", root, { chain: [], next, preconditions: [] });
+        case "map":
+          await ctfMap(ctx, root);
           return;
-        }
         case "restart":
           await notifyRt(ctx, "case.restart", root, {});
           return;
@@ -185,9 +183,6 @@ function ctfCommand(pi: ExtensionAPI): void {
           sendPrompt(pi, ctx, prompt);
           return;
         }
-        case "clear-soft":
-          await notifyRt(ctx, "case.clearNegatives", root, {});
-          return;
         case "configure":
           await notifyRt(ctx, "case.configure", root, {
             flagFormat: words[0],

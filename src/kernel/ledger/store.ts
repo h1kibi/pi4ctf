@@ -330,9 +330,10 @@ export class Ledger {
   /** A restart is a new context: transient (soft) blocks from the previous
    *  attempt must not poison the next one. Hard blocks stay. Rows are marked,
    *  not deleted, so the audit trail survives. */
-  clearTransientNegatives(): number {
+  clearTransientNegatives(id?: string): number {
     let cleared = 0;
     for (const entry of this.listNegatives()) {
+      if (id && entry.id !== id) continue;
       if (!entry.transient || entry.unblockedAt) continue;
       if (!entry.id) continue;
       const marked = {

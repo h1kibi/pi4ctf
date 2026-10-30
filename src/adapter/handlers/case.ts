@@ -99,7 +99,19 @@ export async function handleCase(req: Request, op: string, input: Record<string,
     }
     case 'case.clearNegatives': {
       const project = needRoot(req);
-      return ok(op, { cleared: new Ledger(project).clearTransientNegatives() });
+      const id = typeof input.id === 'string' ? input.id : undefined;
+      return ok(op, { cleared: new Ledger(project).clearTransientNegatives(id) });
+    }
+    case 'case.map': {
+      const project = needRoot(req);
+      const ledger = new Ledger(project);
+      return ok(op, {
+        status: project.status(),
+        plan: project.readPlan(),
+        claims: ledger.openClaims(),
+        negatives: ledger.listNegatives(),
+        recent: ledger.recentOutcomes(8),
+      });
     }
     case 'case.plan': {
       const project = needRoot(req);
