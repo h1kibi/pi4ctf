@@ -1,6 +1,6 @@
 import { KernelError } from '../kernel/error.js';
 import { Project } from '../kernel/project.js';
-import { DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS } from '../kernel/run/exec.js';
+import { DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS } from '../kernel/run/limits.js';
 import { envContextOf } from '../providers/env/context.js';
 import { commandExists } from '../kernel/sysutil.js';
 import { auditState } from '../kernel/state-audit.js';

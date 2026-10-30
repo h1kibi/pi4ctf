@@ -12,6 +12,7 @@ import { resolveInside } from '../fsutil.js';
 import { targetOf } from '../classify/classify.js';
 import { commandExists, resolveBash } from '../sysutil.js';
 import { mergeEnv } from '../target.js';
+import type { Project } from '../project.js';
 import type { TargetSpec } from '../types.js';
 
 export interface RunRequest {
@@ -42,6 +43,17 @@ export interface ExecHost {
   backend: 'host' | 'docker';
   dockerImage?: string;
   target: TargetSpec | null;
+}
+
+export function execHostOf(project: Project): ExecHost {
+  const file = project.file();
+  return {
+    root: project.root,
+    ctfDir: project.ctfDir,
+    backend: file.backend,
+    ...(file.dockerImage ? { dockerImage: file.dockerImage } : {}),
+    target: file.target ?? null,
+  };
 }
 
 export interface Prepared {

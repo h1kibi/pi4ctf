@@ -1,7 +1,8 @@
 import { KernelError } from '../../kernel/error.js';
 import { Ledger } from '../../kernel/ledger/store.js';
 import { commandClassOf, targetOf } from '../../kernel/classify/classify.js';
-import { runExec, runProbes, type ProbeSpec } from '../../kernel/run/exec.js';
+import { runExec } from '../../kernel/run/exec.js';
+import { runProbes, type ProbeSpec } from '../../kernel/run/probes.js';
 import { checkRunScope, checkTargetScope, scanInjection } from '../../kernel/security.js';
 import { isLoopbackHost, parseTarget, targetFromEnv } from '../../kernel/target.js';
 import { signature, routeSignature } from '../../kernel/shape/signature.js';

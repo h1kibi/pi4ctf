@@ -7,7 +7,8 @@ import { test } from 'node:test';
 import { compilePacket } from '../kernel/context/packet.js';
 import { dispatch } from '../adapter/protocol.js';
 import { Ledger } from '../kernel/ledger/store.js';
-import { execHostOf, runInternal } from '../kernel/run/exec.js';
+import { runInternal } from '../kernel/run/exec.js';
+import { execHostOf } from '../kernel/run/prepare.js';
 import { envContextOf } from '../providers/env/context.js';
 import { envSummary } from '../providers/env/summary.js';
 import {
