@@ -1,5 +1,6 @@
+import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { Project } from '../../kernel/project.js';
+import { Project, type ProjectInitSpec } from '../../kernel/project.js';
 import { KernelError } from '../../kernel/error.js';
 import { Ledger } from '../../kernel/ledger/store.js';
 import { compilePacket, writeHandoff } from '../../kernel/context/packet.js';
@@ -19,25 +20,70 @@ import { reachabilityWithRecovery } from '../policy.js';
 import type { Request, Response } from '../types.js';
 import { EVIDENCE_TEXT_CAP, evidenceHeadTail, evidenceLineMatches, doctor, needRoot, ok, str, imageMime } from '../helpers.js';
 
+function initSpec(input: Record<string, unknown>): ProjectInitSpec {
+  return {
+    id: str(input, 'id', 'untitled'),
+    title: str(input, 'title', 'untitled'),
+    goal: str(input, 'goal', '拿到 flag 并验证'),
+    origin: str(input, 'origin', ''),
+    category: str(input, 'category', 'misc'),
+    flagFormat: str(input, 'flagFormat', DEFAULT_FLAG_FORMAT),
+    backend: input.backend === 'host' || input.backend === 'docker' ? input.backend : 'docker',
+    dockerImage: input.dockerImage ? String(input.dockerImage) : undefined,
+    target: parseTarget(input.target) ?? undefined,
+    oracle: { type: 'local', ref: str(input, 'oracleRef', '../oracle.json') },
+    deadlineMs: typeof input.deadlineMs === 'number' ? input.deadlineMs : null,
+    allowedHosts: Array.isArray(input.allowedHosts) ? (input.allowedHosts as string[]).map(String) : ['*'],
+  };
+}
+
+function casePlacement(project: Project): Record<string, unknown> {
+  return {
+    id: project.file().id,
+    caseId: project.caseId || null,
+    root: project.root,
+    containerRoot: project.containerRoot,
+    workspace: project.workspace,
+  };
+}
+
 export async function handleCase(req: Request, op: string, input: Record<string, unknown>): Promise<Response> {
   switch (op) {
     case 'project.init': {
+      // Legacy flat init, kept for direct kernel clients and existing projects.
       if (!req.root) throw new KernelError('INVALID_REQUEST', 'root is required');
-      const project = Project.init(req.root, {
-        id: str(input, 'id', 'untitled'),
-        title: str(input, 'title', 'untitled'),
-        goal: str(input, 'goal', '拿到 flag 并验证'),
-        origin: str(input, 'origin', ''),
-        category: str(input, 'category', 'misc'),
-        flagFormat: str(input, 'flagFormat', DEFAULT_FLAG_FORMAT),
-        backend: input.backend === 'host' || input.backend === 'docker' ? input.backend : 'docker',
-        dockerImage: input.dockerImage ? String(input.dockerImage) : undefined,
-        target: parseTarget(input.target) ?? undefined,
-        oracle: { type: 'local', ref: str(input, 'oracleRef', '../oracle.json') },
-        deadlineMs: typeof input.deadlineMs === 'number' ? input.deadlineMs : null,
-        allowedHosts: Array.isArray(input.allowedHosts) ? (input.allowedHosts as string[]).map(String) : ['*'],
-      });
-      return ok(op, { id: project.file().id, root: project.root });
+      const project = Project.init(req.root, initSpec(input));
+      return ok(op, casePlacement(project));
+    }
+    case 'case.init': {
+      if (!req.root) throw new KernelError('INVALID_REQUEST', 'container root is required');
+      if (typeof input.challengeRoot !== 'string' || input.challengeRoot.length === 0) {
+        throw new KernelError('INVALID_REQUEST', 'challengeRoot is required');
+      }
+      const project = Project.initCase(
+        req.root,
+        input.challengeRoot,
+        initSpec(input),
+        typeof input.caseId === 'string' ? input.caseId : undefined,
+      );
+      return ok(op, casePlacement(project));
+    }
+    case 'case.activate': {
+      if (!req.root) throw new KernelError('INVALID_REQUEST', 'container root is required');
+      let project: Project;
+      if (typeof input.caseId === 'string' && input.caseId.length > 0) {
+        project = Project.activateCase(req.root, input.caseId);
+      } else {
+        if (typeof input.challengeRoot !== 'string' || input.challengeRoot.length === 0) {
+          throw new KernelError('INVALID_REQUEST', 'caseId or challengeRoot is required');
+        }
+        const found = Project.findCaseByChallengeRoot(req.root, input.challengeRoot);
+        if (!found) {
+          throw new KernelError('NOT_FOUND', `no case for challenge root ${input.challengeRoot}`);
+        }
+        project = Project.activateCase(req.root, found);
+      }
+      return ok(op, casePlacement(project));
     }
     case 'project.status': {
       const project = needRoot(req);
@@ -54,10 +100,20 @@ export async function handleCase(req: Request, op: string, input: Record<string,
       return ok(op, { status });
     }
     case 'case.restart': {
-      const project = needRoot(req);
+      if (!req.root) throw new KernelError('INVALID_REQUEST', 'root is required');
+      const project = typeof input.caseId === 'string' && input.caseId.length > 0
+        ? Project.activateCase(req.root, input.caseId)
+        : needRoot(req);
       const restarted = project.restart();
       const clearedNegatives = new Ledger(project).clearTransientNegatives();
-      return ok(op, { ...restarted, clearedNegatives });
+      const progress = path.join(project.ctfDir, 'progress.md');
+      const handoff = fs.existsSync(progress) ? fs.readFileSync(progress, 'utf8').slice(0, 4096) : '';
+      return ok(op, {
+        ...casePlacement(project),
+        ...restarted,
+        clearedNegatives,
+        ...(handoff ? { handoff } : {}),
+      });
     }
     case 'case.continue': {
       const project = needRoot(req);

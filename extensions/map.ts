@@ -37,6 +37,7 @@ interface MapRecent {
 interface MapData {
   status: {
     id?: string;
+    caseId?: string | null;
     status?: string;
     target?: { host?: string; port?: number; instanceId?: string } | null;
     counters?: Record<string, number>;
@@ -82,7 +83,7 @@ function summary(data: MapData): string {
   const soft = data.negatives.filter((n) => n.transient && !n.unblockedAt);
   const hard = data.negatives.filter((n) => !n.transient);
   const lines = [
-    `CASE ${data.status.id ?? '?'} [${data.status.status ?? '?'}] target=${txTarget(data)} flag=${data.status.flagAccepted ? 'accepted' : 'not accepted'}`,
+    `CASE ${data.status.caseId ?? data.status.id ?? '?'} [${data.status.status ?? '?'}] target=${txTarget(data)} flag=${data.status.flagAccepted ? 'accepted' : 'not accepted'}`,
     `BUDGET commands=${counters.command ?? 0}/30 restarts=${counters.restart ?? 0} continues=${counters.continue ?? 0}`,
     '',
     `PLAN next: ${data.plan.next || '(none)'}`,

@@ -40,6 +40,8 @@ export interface RunRequest {
 export interface ExecHost {
   root: string;
   ctfDir: string;
+  /** Writable per-case workspace; Docker mounts this at /challenge/workspace. */
+  workspace: string;
   backend: 'host' | 'docker';
   dockerImage?: string;
   target: TargetSpec | null;
@@ -50,6 +52,7 @@ export function execHostOf(project: Project): ExecHost {
   return {
     root: project.root,
     ctfDir: project.ctfDir,
+    workspace: project.workspace,
     backend: file.backend,
     ...(file.dockerImage ? { dockerImage: file.dockerImage } : {}),
     target: file.target ?? null,
@@ -82,6 +85,15 @@ function stripLeadingEnvAssignments(argv: string[]): string[] {
   return i === 0 ? argv : argv.slice(i);
 }
 
+function resolveRunCwd(host: ExecHost, cwd: string): string {
+  const normalized = cwd.replace(/\\/g, '/');
+  if (normalized === 'workspace' || normalized.startsWith('workspace/')) {
+    const rest = normalized.slice('workspace'.length).replace(/^\/+/, '');
+    return rest ? resolveInside(host.workspace, rest) : host.workspace;
+  }
+  return resolveInside(host.root, cwd);
+}
+
 export function prepareHost(host: ExecHost, req: RunRequest): Prepared {
   const root = host.root;
   let argv: string[];
@@ -110,7 +122,7 @@ export function prepareHost(host: ExecHost, req: RunRequest): Prepared {
       // Never put the command text on bash's argv. WSL's bash.exe expands
       // `$var` in argv before Linux sees it, so loops/heredocs silently lose
       // their variables. A temp script keeps the command byte-for-byte.
-      const cwd = req.cwd ? resolveInside(root, req.cwd) : root;
+      const cwd = req.cwd ? resolveRunCwd(host, req.cwd) : root;
       if (!fs.existsSync(cwd)) fs.mkdirSync(cwd, { recursive: true });
       const scriptPath = path.join(host.ctfDir, `.run-${randomUUID()}.sh`);
       fs.writeFileSync(scriptPath, req.command, 'utf8');
@@ -123,7 +135,7 @@ export function prepareHost(host: ExecHost, req: RunRequest): Prepared {
   } else {
     throw new KernelError('INVALID_REQUEST', 'one of argv | command is required');
   }
-  const cwd = req.cwd ? resolveInside(root, req.cwd) : root;
+  const cwd = req.cwd ? resolveRunCwd(host, req.cwd) : root;
   if (!fs.existsSync(cwd)) fs.mkdirSync(cwd, { recursive: true });
   return { argv, userArgv, cwd, shell, tempFile, targetHint: targetHint ?? targetOf(userArgv), env: mergeEnv(req.target ?? host.target, req.env) };
 }
@@ -134,7 +146,7 @@ export function prepareDocker(host: ExecHost, req: RunRequest): Prepared {
     throw new KernelError('UNSUPPORTED', 'docker backend requires dockerImage in project.json');
   }
   const root = host.root;
-  const workspace = path.join(root, 'workspace');
+  const workspace = host.workspace;
   fs.mkdirSync(workspace, { recursive: true });
   let userArgv: string[];
   let targetHint: string | null = null;

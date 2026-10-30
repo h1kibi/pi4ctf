@@ -49,12 +49,42 @@ interface RtResponse {
 export function findProjectRoot(start: string): string | null {
   let cur = path.resolve(start);
   for (let i = 0; i < 12; i++) {
-    if (fs.existsSync(path.join(cur, ".ctf", "project.json"))) return cur;
+    if (
+      fs.existsSync(path.join(cur, ".ctf", "index.json")) ||
+      fs.existsSync(path.join(cur, ".ctf", "project.json"))
+    ) return cur;
     const parent = path.dirname(cur);
     if (parent === cur) break;
     cur = parent;
   }
   return null;
+}
+
+/** Container root for a challenge directory. Existing .ctf ancestors win;
+ *  otherwise the conventional test/challenges/<name> layout maps to test. */
+export function findContainerRoot(start: string): string {
+  const found = findProjectRoot(start);
+  if (found) return found;
+  const abs = path.resolve(start);
+  const parent = path.dirname(abs);
+  if (path.basename(parent).toLowerCase() === "challenges") return path.dirname(parent);
+  return abs;
+}
+
+export function isCaseContainer(root: string): boolean {
+  return fs.existsSync(path.join(root, ".ctf", "index.json"));
+}
+
+export function activeProjectFile(root: string): string {
+  const indexFile = path.join(root, ".ctf", "index.json");
+  if (fs.existsSync(indexFile)) {
+    const index = JSON.parse(fs.readFileSync(indexFile, "utf8")) as { active?: unknown };
+    if (typeof index.active !== "string" || index.active.length === 0) {
+      throw new Error(`invalid .ctf/index.json at ${indexFile}`);
+    }
+    return path.join(root, ".ctf", index.active, "project.json");
+  }
+  return path.join(root, ".ctf", "project.json");
 }
 
 // ---------------------------------------------------------------------------
@@ -78,49 +108,80 @@ export async function refreshPreflight(ctx: ExtensionContext, root: string, forc
       lastInjectedByRoot.delete(root);
       const files = Array.isArray(pf.data?.files) ? pf.data.files.length : 0;
       const libc = Array.isArray(pf.data?.libc) ? pf.data.libc.length : 0;
-      ctx.ui.notify(`preflight: ${files} ELF file(s), ${libc} libc candidate(s) -> .ctf/chal.json`, "info");
+      ctx.ui.notify(`preflight: ${files} ELF file(s), ${libc} libc candidate(s) -> .ctf/<caseId>/chal.json`, "info");
     }
   } catch {
     // Preflight is best effort; a missing toolchain must not block the case.
   }
 }
 
-export async function ensureAutoProject(ctx: ExtensionContext): Promise<string | null> {
-  const configured = process.env.PI4CTF_ROOT ? path.resolve(process.env.PI4CTF_ROOT) : null;
-  const existing = configured ?? findProjectRoot(ctx.cwd);
-  if (existing && hasProject(existing)) return existing;
-  const root = configured ?? path.resolve(ctx.cwd);
-  if (!shouldAutoInit(root) || AUTO_INIT_DONE.get(root) === "failed") return null;
-  if (hasProject(root)) return root;
-  if (AUTO_INIT_DONE.get(root) === "done") return root;
-  const spec = autoInitSpec(root);
+function pathInside(parent: string, child: string): boolean {
+  const rel = path.relative(parent, child);
+  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+}
+
+function autoInitKey(container: string, challenge: string): string {
+  return `${container}\0${challenge}`;
+}
+
+async function createAutoCase(
+  ctx: ExtensionContext,
+  container: string,
+  challenge: string,
+): Promise<string | null> {
+  const key = autoInitKey(container, challenge);
+  if (AUTO_INIT_DONE.get(key) === "failed") return null;
+  if (AUTO_INIT_DONE.get(key) === "done") return container;
+  const spec = autoInitSpec(challenge);
   try {
-    const res = await callRt("project.init", root, spec);
+    const res = await callRt("case.init", container, { challengeRoot: challenge, ...spec });
     if (!res.ok) {
-      if (hasProject(root)) return root;
-      AUTO_INIT_DONE.set(root, "failed");
+      AUTO_INIT_DONE.set(key, "failed");
       ctx.ui.notify(`pi4ctf auto-init failed [${res.error?.code}]: ${res.error?.message}`, "error");
       return null;
     }
-    AUTO_INIT_DONE.set(root, "done");
+    AUTO_INIT_DONE.set(key, "done");
+    const caseId = typeof res.data?.caseId === "string" ? res.data.caseId : "?";
     ctx.ui.notify(
-      `pi4ctf auto-initialized ${root} (backend=${String(spec.backend)}, category=${String(spec.category)}); use /ctf configure to change it`,
+      `pi4ctf auto-initialized case ${caseId} (backend=${String(spec.backend)}, category=${String(spec.category)}); use /ctf configure to change it`,
       "info",
     );
-    const proj = readJsonFile(path.join(root, ".ctf", "project.json"));
+    const proj = readJsonFile(activeProjectFile(container));
     if (proj?.oracleHash === null) {
       ctx.ui.notify(
         "no valid oracle pinned; run/session/claim work, but flag layer 4 will reject until you place a target-bound oracle and run /ctf configure",
         "warning",
       );
     }
-    await refreshPreflight(ctx, root);
-    return root;
+    await refreshPreflight(ctx, container);
+    return container;
   } catch (err) {
-    AUTO_INIT_DONE.set(root, "failed");
+    AUTO_INIT_DONE.set(key, "failed");
     ctx.ui.notify(`pi4ctf auto-init failed: ${err instanceof Error ? err.message : String(err)}`, "error");
     return null;
   }
+}
+
+export async function ensureAutoProject(ctx: ExtensionContext): Promise<string | null> {
+  const configured = process.env.PI4CTF_ROOT ? path.resolve(process.env.PI4CTF_ROOT) : null;
+  if (configured && hasProject(configured) && !isCaseContainer(configured)) return configured;
+
+  const existing = findProjectRoot(configured ?? ctx.cwd) ?? (configured && hasProject(configured) ? configured : null);
+  if (existing && !isCaseContainer(existing)) return existing;
+  const container = existing ?? configured ?? findContainerRoot(ctx.cwd);
+  if (!hasProject(container) && !shouldAutoInit(ctx.cwd)) return null;
+
+  const challenge = pathInside(container, ctx.cwd) ? path.resolve(ctx.cwd) : container;
+  if (hasProject(container)) {
+    const active = await callRt("case.activate", container, { challengeRoot: challenge });
+    if (active.ok) return container;
+    if (active.error?.code !== "NOT_FOUND") {
+      ctx.ui.notify(`case activation failed [${active.error?.code}]: ${active.error?.message}`, "error");
+      return null;
+    }
+  }
+  if (!shouldAutoInit(challenge)) return null;
+  return createAutoCase(ctx, container, challenge);
 }
 
 export function rootFor(ctx: ExtensionContext, explicit?: string): string {
@@ -129,7 +190,7 @@ export function rootFor(ctx: ExtensionContext, explicit?: string): string {
     : process.env.PI4CTF_ROOT
       ? path.resolve(process.env.PI4CTF_ROOT)
       : findProjectRoot(ctx.cwd) ?? ctx.cwd;
-  if (!fs.existsSync(path.join(root, ".ctf", "project.json"))) {
+  if (!hasProject(root)) {
     throw new Error(
       `no pi4ctf project at ${root}; run /ctf init first (or set PI4CTF_ROOT)`,
     );

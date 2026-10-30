@@ -3,8 +3,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { Type } from "typebox";
 import { defineTool } from "@earendil-works/pi-coding-agent";
-import { DEFAULT_FLAG_FORMAT, oracleLooksValid } from "../../dist/adapter/autoinit.js";
-import { RootParam, callRt, failure, refreshPreflight, rootFor, responseResult, sessionResult, sessions } from "../shared.js";
+import { DEFAULT_FLAG_FORMAT, hasProject, oracleLooksValid } from "../../dist/adapter/autoinit.js";
+import { RootParam, callRt, failure, findContainerRoot, isCaseContainer, refreshPreflight, rootFor, responseResult, sessionResult, sessions } from "../shared.js";
 
 export const ctfInitTool = defineTool({
   name: "ctf_init",
@@ -13,7 +13,7 @@ export const ctfInitTool = defineTool({
     "Initialize a pi4ctf project explicitly when auto-init was skipped (Java/archive-only challenges, guarded directory, or PI4CTF_AUTO_INIT=0). Prefer auto-init; use this instead of calling the low-level rt CLI.",
   promptSnippet: "Initialize a pi4ctf project in the current challenge directory",
   promptGuidelines: [
-    "Use ctf_init only when there is no .ctf/project.json; otherwise use case_configure.",
+    "Use ctf_init only when there is no active case; otherwise use case_configure.",
     "Put the oracle outside the challenge workspace and before init; an oracle created later is not trusted.",
     "For Java/web challenges, pass category web/rev and a dockerImage with the matching JDK when needed.",
     "Backend is a user decision: provide dockerImage to initialize with Docker; omit it for host. Use /ctf init for an explicit backend; allowedHosts is set through the rt protocol.",
@@ -28,16 +28,27 @@ export const ctfInitTool = defineTool({
   }),
   async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
     try {
-      const root = params.root ? path.resolve(ctx.cwd, params.root) : path.resolve(ctx.cwd);
-      if (fs.existsSync(path.join(root, ".ctf", "project.json"))) {
-        throw new Error(`project already exists at ${root}; use case_configure`);
+      const challenge = params.root ? path.resolve(ctx.cwd, params.root) : path.resolve(ctx.cwd);
+      const container = findContainerRoot(challenge);
+      if (hasProject(container) && !isCaseContainer(container)) {
+        throw new Error(`legacy project already exists at ${container}; use case_configure`);
+      }
+      if (isCaseContainer(container)) {
+        const active = await callRt("case.activate", container, { challengeRoot: challenge });
+        if (active.ok) {
+          throw new Error(`case ${String(active.data?.caseId ?? "?")} already exists at ${challenge}; use case_configure`);
+        }
+        if (active.error?.code !== "NOT_FOUND") {
+          throw new Error(`case activation failed [${active.error?.code}]: ${active.error?.message}`);
+        }
       }
       const dockerImage = params.dockerImage ?? process.env.PI4CTF_DOCKER_IMAGE ?? process.env.PI4CTF_PWN_IMAGE;
       const backend = dockerImage ? "docker" : "host";
       const oracleRef = params.oracleRef ?? "../oracle.json";
-      const res = await callRt("project.init", root, {
-        id: path.basename(root) || "ctf",
-        title: path.basename(root) || "ctf",
+      const res = await callRt("case.init", container, {
+        challengeRoot: challenge,
+        id: path.basename(challenge) || "ctf",
+        title: path.basename(challenge) || "ctf",
         goal: "solve the challenge and validate the flag",
         category: params.category ?? "misc",
         flagFormat: params.flagFormat ?? DEFAULT_FLAG_FORMAT,
@@ -47,11 +58,11 @@ export const ctfInitTool = defineTool({
         oracleRef,
       });
       if (res.ok) {
-        const oraclePath = path.resolve(root, oracleRef);
+        const oraclePath = path.resolve(challenge, oracleRef);
         const notes: string[] = [];
         if (!fs.existsSync(oraclePath)) notes.push(`oracle not found at ${oraclePath}; flag will be unverified until it exists`);
         else if (!oracleLooksValid(oraclePath)) notes.push(`oracle at ${oraclePath} has no flag or 64-hex flagSha256; flag will be unverified`);
-        await refreshPreflight(ctx, root, true);
+        await refreshPreflight(ctx, container, true);
         if (notes.length) res.data = { ...(res.data ?? {}), warnings: notes };
       }
       return responseResult(res, "ctf_init");

@@ -24,7 +24,6 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { atomicWriteFile, FileLock, readJson, readJsonIfExists, rootIdentity, sha256 } from './fsutil.js';
 import { KernelError } from './error.js';
-import { MAX_CASE_RESTARTS } from './types.js';
 import { allocateCommand } from './commands.js';
 import { appendEventRecord, lastFormatChange as readLastFormatChange } from './events.js';
 import { normalizePlan, readPlanBlock } from './plan.js';
@@ -48,24 +47,123 @@ export interface ProjectInitSpec {
 }
 
 
+interface Placement {
+  root: string;
+  ctfDir: string;
+  containerRoot: string;
+  caseId?: string;
+  workspace: string;
+}
+
+interface CaseIndex {
+  version: 1;
+  active: string;
+}
+
+const CASE_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
+
+function isInsideOrEqual(parent: string, child: string): boolean {
+  const rel = path.relative(parent, child);
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
 export class Project {
+  /** Challenge files root (the Docker :/challenge mount). */
   readonly root: string;
+  /** Container root that owns .ctf/ and workspace/. */
+  readonly containerRoot: string;
+  /** Timestamp case id; empty for a legacy flat .ctf. */
+  readonly caseId: string;
+  /** Per-case writable workspace (container/workspace/<id>). */
+  readonly workspace: string;
   readonly ctfDir: string;
   private readonly lock: FileLock;
 
-  private constructor(root: string) {
+  private constructor(root: string, placement: Omit<Placement, 'root'>) {
     this.root = path.resolve(root);
-    this.ctfDir = path.join(this.root, '.ctf');
+    this.containerRoot = path.resolve(placement.containerRoot);
+    this.caseId = placement.caseId ?? '';
+    this.ctfDir = path.resolve(placement.ctfDir);
+    this.workspace = path.resolve(placement.workspace);
     this.lock = FileLock.at(path.join(this.ctfDir, '.lock'));
   }
 
+  /** Legacy flat project: <challenge>/.ctf + <challenge>/workspace. */
   static init(root: string, spec: ProjectInitSpec): Project {
     const rootAbs = path.resolve(root);
     fs.mkdirSync(rootAbs, { recursive: true });
     const ctfDir = path.join(rootAbs, '.ctf');
+    fs.mkdirSync(ctfDir, { recursive: true });
     if (fs.existsSync(path.join(ctfDir, 'project.json'))) {
       throw new KernelError('CONFLICT', `project already initialized at ${ctfDir}`);
     }
+    return Project.initialize(
+      {
+        root: rootAbs,
+        ctfDir,
+        containerRoot: rootAbs,
+        workspace: path.join(rootAbs, 'workspace'),
+      },
+      spec,
+    );
+  }
+
+  /** Create one timestamped case under <container>/.ctf/<id>. The challenge
+   *  root can be the container itself or a subdirectory (e.g. test/challenges/A). */
+  static initCase(
+    containerRoot: string,
+    challengeRoot: string,
+    spec: ProjectInitSpec,
+    requestedId?: string,
+  ): Project {
+    const containerAbs = path.resolve(containerRoot);
+    const challengeAbs = path.resolve(challengeRoot);
+    fs.mkdirSync(containerAbs, { recursive: true });
+    fs.mkdirSync(challengeAbs, { recursive: true });
+    if (!isInsideOrEqual(containerAbs, challengeAbs)) {
+      throw new KernelError('SECURITY', 'challenge root must be inside the container root');
+    }
+    const ctfRoot = path.join(containerAbs, '.ctf');
+    fs.mkdirSync(ctfRoot, { recursive: true });
+    let id = requestedId ?? Project.newCaseId();
+    if (!CASE_ID_RE.test(id)) {
+      throw new KernelError('INVALID_REQUEST', `invalid case id: ${id}`);
+    }
+    if (requestedId && fs.existsSync(path.join(ctfRoot, id))) {
+      throw new KernelError('CONFLICT', `case already exists: ${id}`);
+    }
+    if (!requestedId) {
+      let suffix = 2;
+      while (fs.existsSync(path.join(ctfRoot, id))) {
+        id = `${Project.newCaseId()}-${suffix++}`;
+      }
+    }
+    const ctfDir = path.join(ctfRoot, id);
+    fs.mkdirSync(ctfDir, { recursive: true });
+    const workspace = path.join(containerAbs, 'workspace', id);
+    fs.mkdirSync(workspace, { recursive: true });
+    const project = Project.initialize(
+      {
+        root: challengeAbs,
+        ctfDir,
+        containerRoot: containerAbs,
+        caseId: id,
+        workspace,
+      },
+      spec,
+    );
+    Project.setActiveCase(containerAbs, id);
+    return project;
+  }
+
+  static newCaseId(now = new Date()): string {
+    const p = (n: number) => String(n).padStart(2, '0');
+    return `${now.getFullYear()}${p(now.getMonth() + 1)}${p(now.getDate())}-${p(now.getHours())}${p(now.getMinutes())}`;
+  }
+
+  private static initialize(placement: Placement, spec: ProjectInitSpec): Project {
+    const rootAbs = placement.root;
+    const ctfDir = placement.ctfDir;
     // Oracle must be a relative reference to a file OUTSIDE the challenge
     // root but INSIDE its parent (kernel-design §8: 工作区外, no model writes).
     if (path.isAbsolute(spec.oracle.ref)) {
@@ -98,6 +196,7 @@ export class Project {
     ]) {
       fs.mkdirSync(path.join(ctfDir, dir), { recursive: true });
     }
+    fs.mkdirSync(placement.workspace, { recursive: true });
     const initialOracleHash = oracleFileHash(oracleAbs);
     const initialOracle = readOracle(oracleAbs)?.oracle;
     if (initialOracleHash && initialOracle) {
@@ -116,6 +215,7 @@ export class Project {
       dockerImage: spec.dockerImage,
       target: spec.target ? normalizeTarget(spec.target) : undefined,
       root: rootAbs,
+      ...(placement.caseId ? { containerRoot: placement.containerRoot, caseId: placement.caseId } : {}),
       rootIdentity: rootIdentity(rootAbs),
       envHash: sha256(`${process.platform}:${process.arch}:${spec.backend ?? 'docker'}`),
       flagFormat: spec.flagFormat,
@@ -127,7 +227,12 @@ export class Project {
       counters: { command: 0, commandSeq: 0, claim: 0, fact: 0, negative: 0, event: 0, session: 0 },
       revisions: { event: 0, claim: 0, fact: 0, negative: 0 },
     };
-    const proj = new Project(rootAbs);
+    const proj = new Project(rootAbs, {
+      ctfDir,
+      containerRoot: placement.containerRoot,
+      caseId: placement.caseId,
+      workspace: placement.workspace,
+    });
     proj.lock.withLock(() => {
       const cur = readJsonIfExists<ProjectFile>(path.join(ctfDir, 'project.json'));
       if (cur) throw new KernelError('CONFLICT', 'project already initialized');
@@ -143,9 +248,109 @@ export class Project {
     return proj;
   }
 
-  /** Open an existing project; fail closed if the root was moved/replaced. */
+  static readIndex(containerRoot: string): CaseIndex | null {
+    const file = path.join(path.resolve(containerRoot), '.ctf', 'index.json');
+    if (!fs.existsSync(file)) return null;
+    const raw = readJson<Partial<CaseIndex>>(file);
+    if (raw.version !== 1 || typeof raw.active !== 'string' || !CASE_ID_RE.test(raw.active)) {
+      throw new KernelError('CONFLICT', `invalid .ctf/index.json at ${file}`);
+    }
+    return { version: 1, active: raw.active };
+  }
+
+  static activeCaseId(containerRoot: string): string | null {
+    return Project.readIndex(containerRoot)?.active ?? null;
+  }
+
+  static setActiveCase(containerRoot: string, caseId: string): void {
+    const containerAbs = path.resolve(containerRoot);
+    if (!CASE_ID_RE.test(caseId)) throw new KernelError('INVALID_REQUEST', `invalid case id: ${caseId}`);
+    const ctfDir = path.join(containerAbs, '.ctf');
+    if (!fs.existsSync(path.join(ctfDir, caseId, 'project.json'))) {
+      throw new KernelError('NOT_FOUND', `case not found: ${caseId}`);
+    }
+    atomicWriteFile(
+      path.join(ctfDir, 'index.json'),
+      JSON.stringify({ version: 1, active: caseId }, null, 2),
+    );
+  }
+
+  static caseIds(containerRoot: string): string[] {
+    const ctfDir = path.join(path.resolve(containerRoot), '.ctf');
+    if (!fs.existsSync(ctfDir)) return [];
+    return fs
+      .readdirSync(ctfDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && CASE_ID_RE.test(entry.name))
+      .filter((entry) => fs.existsSync(path.join(ctfDir, entry.name, 'project.json')))
+      .map((entry) => entry.name)
+      .sort();
+  }
+
+  /** Best case whose challenge root equals or contains `directory`; a deeper
+   *  challenge root wins over the container-wide case, then the newest wins. */
+  static findCaseByChallengeRoot(containerRoot: string, directory: string): string | null {
+    const wanted = path.resolve(directory);
+    let best: { id: string; depth: number; mtime: number } | null = null;
+    for (const id of Project.caseIds(containerRoot)) {
+      try {
+        const projectJson = path.join(path.resolve(containerRoot), '.ctf', id, 'project.json');
+        const file = readJson<ProjectFile>(projectJson);
+        const root = path.resolve(file.root);
+        if (!isInsideOrEqual(root, wanted)) continue;
+        const depth = root.length;
+        const mtime = fs.statSync(projectJson).mtimeMs;
+        if (!best || depth > best.depth || (depth === best.depth && mtime > best.mtime)) {
+          best = { id, depth, mtime };
+        }
+      } catch {
+        // A corrupt case is reported by doctor/status; activation skips it.
+      }
+    }
+    return best?.id ?? null;
+  }
+
+  static openCase(containerRoot: string, caseId: string): Project {
+    const containerAbs = path.resolve(containerRoot);
+    if (!CASE_ID_RE.test(caseId)) throw new KernelError('INVALID_REQUEST', `invalid case id: ${caseId}`);
+    const ctfDir = path.join(containerAbs, '.ctf', caseId);
+    const projectJson = path.join(ctfDir, 'project.json');
+    if (!fs.existsSync(projectJson)) {
+      throw new KernelError('NOT_FOUND', `case not found: ${caseId} (looked in ${ctfDir})`);
+    }
+    const file = readJson<ProjectFile>(projectJson);
+    const rootAbs = path.resolve(file.root);
+    if (!isInsideOrEqual(containerAbs, rootAbs)) {
+      throw new KernelError('SECURITY', 'case root escapes the container root');
+    }
+    if (file.containerRoot && path.resolve(file.containerRoot) !== containerAbs) {
+      throw new KernelError('SECURITY', `case ${caseId} belongs to another container`);
+    }
+    const currentId = rootIdentity(rootAbs);
+    if (currentId !== file.rootIdentity) {
+      throw new KernelError(
+        'SECURITY',
+        `root identity mismatch (expected ${file.rootIdentity}, got ${currentId}); project root moved or replaced`,
+      );
+    }
+    return new Project(rootAbs, {
+      ctfDir,
+      containerRoot: containerAbs,
+      caseId,
+      workspace: path.join(containerAbs, 'workspace', caseId),
+    });
+  }
+
+  static activateCase(containerRoot: string, caseId: string): Project {
+    const project = Project.openCase(containerRoot, caseId);
+    Project.setActiveCase(containerRoot, caseId);
+    return project;
+  }
+
+  /** Open the active case, or a legacy flat project. */
   static open(root: string): Project {
     const rootAbs = path.resolve(root);
+    const index = Project.readIndex(rootAbs);
+    if (index) return Project.openCase(rootAbs, index.active);
     const ctfDir = path.join(rootAbs, '.ctf');
     const projectJson = path.join(ctfDir, 'project.json');
     if (!fs.existsSync(projectJson)) {
@@ -159,7 +364,11 @@ export class Project {
         `root identity mismatch (expected ${file.rootIdentity}, got ${currentId}); project root moved or replaced`,
       );
     }
-    return new Project(rootAbs);
+    return new Project(rootAbs, {
+      ctfDir,
+      containerRoot: rootAbs,
+      workspace: path.join(rootAbs, 'workspace'),
+    });
   }
 
   /** Run fn under the project lock (short lock: ledgers, counters, events). */
@@ -318,6 +527,10 @@ export class Project {
     }
     return {
       id: f.id,
+      caseId: this.caseId || null,
+      root: this.root,
+      containerRoot: this.containerRoot,
+      workspace: this.workspace,
       title: f.title,
       status: f.status,
       category: f.category,
@@ -446,23 +659,20 @@ export class Project {
   }
 
   /** Start a fresh command budget while preserving evidence/claims/facts.
-   *  The case stays active; restart count is audited and capped. */
-  restart(maxRestarts = MAX_CASE_RESTARTS): { restarts: number; command: number } {
+   *  Restart is human-only and deliberately uncapped: each attempt is audited. */
+  restart(): { restarts: number; command: number } {
     let restarts = 0;
     this.mutateFile((file) => {
       if (file.status !== 'active') {
-        throw new KernelError('CONFLICT', `case is ${file.status}; restart requires an active case`);
-      }
-      restarts = file.counters.restart ?? 0;
-      if (restarts >= maxRestarts) {
-        throw new KernelError('LIMIT', `case restart limit reached (${restarts}/${maxRestarts})`);
+        file.status = 'active';
       }
       file.counters.command = 0;
       file.timeLimitAtMs = null;
-      file.counters.restart = restarts + 1;
+      restarts = (file.counters.restart ?? 0) + 1;
+      file.counters.restart = restarts;
     });
-    this.appendEvent('case.restart', 'adapter', { restart: restarts + 1, command: 0 });
-    return { restarts: restarts + 1, command: 0 };
+    this.appendEvent('case.restart', 'adapter', { restart: restarts, command: 0 });
+    return { restarts, command: 0 };
   }
 
   /** Count an automatic target reset attempt; the cap is enforced by the

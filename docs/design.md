@@ -74,7 +74,8 @@ pi host
        └─ flag
             │
             ▼
-       .ctf/：events、artifacts、projections
+       .ctf/<caseId>/：events、artifacts、projections
+       workspace/<caseId>/：per-case writable outputs
             │
             ▼
        Kali sandbox / external tools / MCP

@@ -37,7 +37,10 @@ export interface OracleInfo {
 }
 
 export function hasProject(root: string): boolean {
-  return fs.existsSync(path.join(root, ".ctf", "project.json"));
+  return (
+    fs.existsSync(path.join(root, ".ctf", "index.json")) ||
+    fs.existsSync(path.join(root, ".ctf", "project.json"))
+  );
 }
 
 export function readJsonFile(file: string): Record<string, unknown> | null {

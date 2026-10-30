@@ -304,7 +304,12 @@ export interface ProjectFile {
   backend: 'host' | 'docker';
   dockerImage?: string;
   target?: TargetSpec;
+  /** Challenge files root for this case. */
   root: string;
+  /** Container root that owns .ctf/ and workspace/; absent for legacy flat projects. */
+  containerRoot?: string;
+  /** Timestamp case id; absent for legacy flat projects. */
+  caseId?: string;
   rootIdentity: string;
   envHash: string;
   flagFormat: string;
@@ -336,9 +341,6 @@ export interface EventRecord {
 /** External turn budget (docs/design.md §6): enforced by code at the run
  *  verb, shared by the adapter gate and the packet budget line. */
 export const TURN_BUDGET = 30;
-
-/** A case may restart its command budget a small, audited number of times. */
-export const MAX_CASE_RESTARTS = 3;
 
 /** Target reset attempts are audited and capped independently of the budget. */
 export const MAX_TARGET_RESETS = 3;

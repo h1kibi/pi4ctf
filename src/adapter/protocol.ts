@@ -39,6 +39,8 @@ async function dispatchInner(req: Request): Promise<Response> {
 
   if (
     op === 'project.init' ||
+    op === 'case.init' ||
+    op === 'case.activate' ||
     op === 'project.status' ||
     op === 'project.close' ||
     op === 'case.close' ||

@@ -19,8 +19,8 @@ import {
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import {
-  seenOutcomesByRoot, lastInjectedByRoot, PREFLIGHT_DONE,
-  callRt, ensureAutoProject, findProjectRoot, refreshPreflight, sessions,
+  seenOutcomesByRoot, lastInjectedByRoot, PREFLIGHT_DONE, activeProjectFile, isCaseContainer,
+  callRt, ensureAutoProject, findContainerRoot, findProjectRoot, refreshPreflight, sessions,
 } from "./shared.js";
 import { envMemoryTool } from "./tools/env.js";
 import { deepseekSearchTool, deepseekFetchTool, deepseekVisionTool } from "./tools/external.js";
@@ -104,7 +104,7 @@ function ctfCommand(pi: ExtensionAPI): void {
             "/ctf status",
             "/ctf handoff",
             "/ctf map",
-            "/ctf restart",
+            "/ctf restart [caseId]",
             "/ctf continue [prompt]",
             "/ctf min:<minutes> [prompt]",
             "/ctf configure [flagFormat] [oracleRef] [host|docker] [dockerImage] [target]",
@@ -116,7 +116,23 @@ function ctfCommand(pi: ExtensionAPI): void {
       }
 
       if (sub === "init") {
-        const root = ctx.cwd;
+        const challenge = ctx.cwd;
+        const container = findContainerRoot(challenge);
+        if (hasProject(container) && !isCaseContainer(container)) {
+          ctx.ui.notify(`legacy project already exists at ${container}; use /ctf configure or move it aside`, "error");
+          return;
+        }
+        if (isCaseContainer(container)) {
+          const active = await callRt("case.activate", container, { challengeRoot: challenge });
+          if (active.ok) {
+            ctx.ui.notify(`case ${String(active.data?.caseId ?? "?")} already exists at ${challenge}; use /ctf restart <caseId>`, "info");
+            return;
+          }
+          if (active.error?.code !== "NOT_FOUND") {
+            ctx.ui.notify(`case activation failed [${active.error?.code}]: ${active.error?.message}`, "error");
+            return;
+          }
+        }
         const flagFormat = words[0] ?? DEFAULT_FLAG_FORMAT;
         const oracleRef = words[1] ?? "../oracle.json";
         const backend = words[2] === "docker" ? "docker" : "host";
@@ -129,9 +145,10 @@ function ctfCommand(pi: ExtensionAPI): void {
           return;
         }
         try {
-          const res = await callRt("project.init", root, {
-            id: path.basename(root) || "ctf",
-            title: path.basename(root) || "ctf",
+          const res = await callRt("case.init", container, {
+            challengeRoot: challenge,
+            id: path.basename(challenge) || "ctf",
+            title: path.basename(challenge) || "ctf",
             goal: "solve the challenge and validate the flag",
             category,
             flagFormat,
@@ -142,17 +159,18 @@ function ctfCommand(pi: ExtensionAPI): void {
             allowedHosts: ["*"],
           });
           if (res.ok) {
-            const oraclePath = path.resolve(root, oracleRef);
+            const oraclePath = path.resolve(challenge, oracleRef);
             const oracleNote = !fs.existsSync(oraclePath)
               ? `\nWARNING: oracle not found at ${oraclePath}; flag layer 4 will reject an oracle created after init. Put the supplied oracle there before /ctf init.`
               : !oracleLooksValid(oraclePath)
                 ? `\nWARNING: oracle at ${oraclePath} has no flag or 64-hex flagSha256; it is not pinned. Use case_configure after fixing it.`
                 : "";
-            ctx.ui.notify(`initialized ${root}${oracleNote}`, "info");
-            const pf = await callRt("case.preflight", root, {});
+            const caseId = typeof res.data?.caseId === "string" ? res.data.caseId : "?";
+            ctx.ui.notify(`initialized case ${caseId} at ${challenge}${oracleNote}`, "info");
+            const pf = await callRt("case.preflight", container, {});
             if (pf.ok) {
               const count = Array.isArray(pf.data?.files) ? pf.data?.files.length : 0;
-              ctx.ui.notify(`preflight: ${count} ELF file(s) -> .ctf/chal.json`, "info");
+              ctx.ui.notify(`preflight: ${count} ELF file(s) -> .ctf/${caseId}/chal.json`, "info");
             }
           } else {
             ctx.ui.notify(`init failed [${res.error?.code}]: ${res.error?.message}`, "error");
@@ -164,7 +182,7 @@ function ctfCommand(pi: ExtensionAPI): void {
       }
 
       const root = cwdRoot ?? (process.env.PI4CTF_ROOT ? path.resolve(process.env.PI4CTF_ROOT) : ctx.cwd);
-      if (!fs.existsSync(path.join(root, ".ctf", "project.json"))) {
+      if (!hasProject(root)) {
         ctx.ui.notify(`no project at ${root}; run /ctf init`, "error");
         return;
       }
@@ -217,8 +235,30 @@ function ctfCommand(pi: ExtensionAPI): void {
           await ctfMap(ctx, root);
           return;
         case "restart": {
-          const restarted = await notifyRt(ctx, "case.restart", root, {});
-          if (restarted) clearTimeTimer(root);
+          const caseId = words[0];
+          // A fresh agent run must not inherit the previous rt bridge or its
+          // live container sessions.
+          await sessions.close();
+          const res = await callRt("case.restart", root, caseId ? { caseId } : {});
+          if (!res.ok) {
+            ctx.ui.notify(`case.restart failed [${res.error?.code}]: ${res.error?.message}`, "error");
+            return;
+          }
+          clearTimeTimer(root);
+          seenOutcomesByRoot.delete(root);
+          lastInjectedByRoot.delete(root);
+          PREFLIGHT_DONE.delete(root);
+          await refreshPreflight(ctx, root, true);
+          const data = res.data ?? {};
+          ctx.ui.notify(`case.restart: ${JSON.stringify(data, null, 2).slice(0, 1800)}`, "info");
+          const handoff = typeof data.handoff === "string" ? data.handoff.trim() : "";
+          if (handoff) {
+            sendPrompt(
+              pi,
+              ctx,
+              `[PI4CTF RESTART HANDOFF]\n${handoff}\n[END PI4CTF RESTART HANDOFF]\n\nResume this case from the handoff. Re-check the current target and files before running.`,
+            );
+          }
           return;
         }
         case "continue": {
@@ -246,8 +286,9 @@ function ctfCommand(pi: ExtensionAPI): void {
         case "wp": {
           let caseId = path.basename(root) || "ctf";
           try {
-            const file = JSON.parse(fs.readFileSync(path.join(root, ".ctf", "project.json"), "utf8")) as { id?: unknown };
-            if (typeof file.id === "string" && file.id.length > 0) caseId = file.id;
+            const file = JSON.parse(fs.readFileSync(activeProjectFile(root), "utf8")) as { id?: unknown; caseId?: unknown };
+            if (typeof file.caseId === "string" && file.caseId.length > 0) caseId = file.caseId;
+            else if (typeof file.id === "string" && file.id.length > 0) caseId = file.id;
           } catch {
             // Keep the directory name if project.json is unreadable.
           }

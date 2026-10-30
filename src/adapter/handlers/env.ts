@@ -15,14 +15,18 @@ import { ok, str } from '../helpers.js';
  *  rootless probes run from a shared temp dir so `docker run` never creates a
  *  workspace directory in the user's current/challenge directory. */
 function envContextFor(root: string | undefined, image: string | undefined): EnvContext {
-  if (!image && root && fs.existsSync(path.join(root, '.ctf', 'project.json'))) {
+  if (
+    !image && root &&
+    (fs.existsSync(path.join(root, '.ctf', 'index.json')) ||
+      fs.existsSync(path.join(root, '.ctf', 'project.json')))
+  ) {
     return envContextOf(Project.open(root));
   }
   const ctfDir = path.join(os.tmpdir(), 'pi4ctf-env-probe');
   fs.mkdirSync(ctfDir, { recursive: true });
   const base = image ? ctfDir : path.resolve(root ?? process.cwd());
   return {
-    host: { root: base, ctfDir, backend: image ? 'docker' : 'host', ...(image ? { dockerImage: image } : {}), target: null },
+    host: { root: base, ctfDir, workspace: path.join(base, 'workspace'), backend: image ? 'docker' : 'host', ...(image ? { dockerImage: image } : {}), target: null },
     origin: 'env',
     protectedRoot: base,
   };

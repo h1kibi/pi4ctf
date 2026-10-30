@@ -154,7 +154,7 @@ export class SessionManager {
       if (!file.dockerImage) {
         throw new KernelError('UNSUPPORTED', 'docker backend requires dockerImage in project.json');
       }
-      const workspace = path.join(this.project.root, 'workspace');
+      const workspace = this.project.workspace;
       fs.mkdirSync(workspace, { recursive: true });
       command = 'docker';
       container = `pi4ctf-${id}-${sha256(this.project.root).slice(0, 8)}`;

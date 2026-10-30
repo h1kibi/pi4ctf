@@ -1,5 +1,7 @@
 # pi4ctf Rust 内核设计
 
+> 状态：**详细参考** —— Rust 内核的目标实现设计；**Rust `bin/rt` 尚未实现**，当前可运行版本是 TS 内核（行为以 [`design.md`](design.md) 为准）。
+>
 > **定位：内核，不是完整插件。** 本文只定义 `rt` 内核：进程、文件、证据、状态与扩展缝。
 > 这不是 pi 插件设计，也不是工具接入/环境扩展方案；上层 pi 集成、题型工具、MCP、浏览器/逆向环境不在本文范围内，后续通过协议与扩展缝接入。
 >
@@ -73,27 +75,35 @@ flowchart LR
 
 ## 2. 磁盘状态
 
-项目目录 `<challenge>/.ctf/`：
+容器目录 `<container>/.ctf/`；每个 case 一个时间戳目录，挑战文件根可位于容器内：
 
 ```text
-.ctf/
-  project.json
-  facts/f0001.json
-  intents/i0001.json
-  hints/h0001.json
-  events.jsonl
-  flags.jsonl
-  artifacts/
-  jobs/<jobId>/{manifest,state,stdout,stderr,result}.json|log
-  sessions/<sessionId>.json
-  traces/
-  scratch/
-  graph.json
-  graph.md
-  state.json
-  progress.md
-  .lock
+test/
+  .ctf/index.json                 {"version":1,"active":"20261031-1420"}
+  .ctf/20261031-1420/
+    project.json                  root=challengeRoot, caseId, counters
+    facts/f0001.json
+    intents/i0001.json
+    hints/h0001.json
+    events.jsonl
+    flags.jsonl
+    artifacts/
+    jobs/<jobId>/{manifest,state,stdout,stderr,result}.json|log
+    sessions/<sessionId>.json
+    traces/
+    scratch/
+    graph.json
+    graph.md
+    state.json
+    progress.md
+    chal.json
+    .lock
+  workspace/20261031-1420/        per-case writable workspace
+  challenges/A/
+  challenges/B/
 ```
+
+旧版 `<challenge>/.ctf/project.json` 仍按单 case 读取；新写入使用容器布局。`project.root` 是 challenge files root，`project.containerRoot` 与 `project.caseId` 记录归属；Docker 只挂载 challenge root 和该 case 的 workspace。
 
 原则：
 
@@ -264,8 +274,10 @@ flowchart LR
 
 | op | 说明 |
 |---|---|
-| `project.init` | 创建 `.ctf/`，绑定 root、goal、backend、target、oracle、flagFormat；只 pin 含 flag/flagSha256 的 oracle |
-| `project.status` | 有界摘要、队列头、活跃 job、deadline、revisions |
+| `project.init` | 旧版单 case：创建 `<challenge>/.ctf/project.json`，绑定 root、goal、backend、target、oracle、flagFormat；只 pin 含 flag/flagSha256 的 oracle |
+| `case.init` | 在 container 下创建 `.ctf/<caseId>/`、`workspace/<caseId>/`，写 challengeRoot，更新 `.ctf/index.json` |
+| `case.activate` | 按 `caseId` 或包含目录选择 case，更新 `.ctf/index.json` |
+| `project.status` | 有界摘要、caseId/root/workspace、队列头、活跃 job、deadline、revisions |
 | `project.close` | completed/failed/stopped，写 close 事件 |
 | `fact.add` | 追加未验证 Fact；校验 commandId/artifact/hash |
 | `fact.verify` | 运行验证；通过则写新 Fact 或更新 verified 状态 |
@@ -276,8 +288,9 @@ flowchart LR
 | `intent.reopen` | `active → pending`，需原因与 audit |
 | `hint.add` | 追加 Hint |
 | `case.checkpoint` | 写状态快照与目标 |
+| `case.restart` | 人类触发：可选 caseId，激活并重开 case，清预算/时间限制/soft negatives；无次数上限 |
 | `case.handoff` | 生成 `progress.md` |
-| `case.preflight` | 扫描 ELF/libc + 非 ELF 格式，写 `.ctf/chal.json`（静态元数据，不占执行预算） |
+| `case.preflight` | 扫描 ELF/libc + 非 ELF 格式，写 `.ctf/<caseId>/chal.json`（静态元数据，不占执行预算） |
 | `case.configure` | 修 flagFormat/oracle/backend/target，校验 target 可达与 oracle 绑定 |
 | `case.doctor` | 后端/host 工具 digest/健康检查 |
 | `case.evidence` | 读 artifact；支持 grep/head/tail；probe batch 可汇总 children |

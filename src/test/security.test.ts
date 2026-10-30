@@ -14,7 +14,8 @@ import { Ledger } from '../kernel/ledger/store.js';
 import { commandClassOf } from '../kernel/classify/classify.js';
 import { signature } from '../kernel/shape/signature.js';
 import { commandExists } from '../kernel/sysutil.js';
-import { makeProject } from './helpers.js';
+import { execHostOf, prepareDocker, prepareHost } from '../kernel/run/prepare.js';
+import { makeContainerCases, makeProject } from './helpers.js';
 
 const NODE = process.execPath;
 
@@ -305,6 +306,130 @@ test('case.restart clears transient negative entries but keeps hard blocks', asy
   }
 });
 
+test('case.init creates a timestamped case and points the container index at it', async () => {
+  const container = fs.mkdtempSync(path.join(os.tmpdir(), 'pi4ctf-initcase-'));
+  const challenge = path.join(container, 'challenges', 'A');
+  const oracle = path.join(container, 'challenges', 'oracle.json');
+  try {
+    fs.mkdirSync(challenge, { recursive: true });
+    fs.writeFileSync(oracle, JSON.stringify({ flag: 'flag{init_case}' }, null, 2));
+    const res = await dispatch({
+      op: 'case.init',
+      root: container,
+      input: {
+        challengeRoot: challenge,
+        oracleRef: '../oracle.json',
+        backend: 'host',
+        flagFormat: 'flag\\{[^}]+\\}',
+      },
+    });
+    assert.equal(res.ok, true);
+    const data = res.ok ? res.data as Record<string, unknown> : {};
+    const id = String(data.caseId);
+    assert.match(id, /^\d{8}-\d{4}$/);
+    assert.equal(Project.activeCaseId(container), id);
+    assert.equal(Project.open(container).root, challenge);
+    assert.equal(Project.open(container).workspace, path.join(container, 'workspace', id));
+  } finally {
+    fs.rmSync(container, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+  }
+});
+
+test('case container stores timestamped cases, per-case workspaces, and an active index', async () => {
+  const box = makeContainerCases();
+  try {
+    const [a, b] = box.cases;
+    assert.ok(a && b);
+    const index = JSON.parse(fs.readFileSync(path.join(box.container, '.ctf', 'index.json'), 'utf8')) as { active?: string };
+    assert.equal(index.active, b.id);
+    assert.ok(fs.existsSync(path.join(box.container, 'workspace', a.id)));
+    assert.ok(fs.existsSync(path.join(box.container, 'workspace', b.id)));
+
+    const opened = Project.open(box.container);
+    assert.equal(opened.caseId, b.id);
+    assert.equal(opened.root, b.root);
+    assert.equal(opened.workspace, path.join(box.container, 'workspace', b.id));
+    assert.equal(Project.openCase(box.container, a.id).root, a.root);
+
+    const activated = await dispatch({
+      op: 'case.activate',
+      root: box.container,
+      input: { challengeRoot: a.root },
+    });
+    assert.equal(activated.ok, true);
+    assert.equal(Project.activeCaseId(box.container), a.id);
+  } finally {
+    box.cleanup();
+  }
+});
+
+test('docker runs mount the case workspace, not a shared root workspace', () => {
+  const box = makeContainerCases();
+  try {
+    const first = box.cases[0];
+    assert.ok(first);
+    first.project.reconfigure({ backend: 'docker', dockerImage: 'example:case' });
+    const prepared = prepareDocker(execHostOf(first.project), { argv: ['true'] });
+    assert.ok(prepared.argv.includes(`${first.project.workspace}:/challenge/workspace:rw`));
+    assert.ok(!prepared.argv.includes(`${path.join(first.root, 'workspace')}:/challenge/workspace:rw`));
+  } finally {
+    box.cleanup();
+  }
+});
+
+test('host runs map cwd=workspace to the case workspace', () => {
+  const box = makeContainerCases();
+  try {
+    const first = box.cases[0];
+    assert.ok(first);
+    const prepared = prepareHost(execHostOf(first.project), { argv: ['true'], cwd: 'workspace' });
+    assert.equal(prepared.cwd, first.project.workspace);
+    assert.throws(
+      () => prepareHost(execHostOf(first.project), { argv: ['true'], cwd: 'workspace/../escape' }),
+      /path escapes/,
+    );
+  } finally {
+    box.cleanup();
+  }
+});
+
+test('case.restart selects a case id, reopens it, clears soft blocks, and has no cap', async () => {
+  const box = makeContainerCases();
+  try {
+    const [a, b] = box.cases;
+    assert.ok(a && b);
+    await dispatch({ op: 'case.activate', root: box.container, input: { caseId: a.id } });
+    b.project.close('stopped');
+    const progress = path.join(b.project.ctfDir, 'progress.md');
+    fs.writeFileSync(progress, 'resume from the second case');
+
+    for (let i = 0; i < 5; i++) {
+      const res = await dispatch({
+        op: 'case.restart',
+        root: box.container,
+        input: { caseId: b.id },
+      });
+      assert.equal(res.ok, true);
+    }
+    const final = await dispatch({
+      op: 'case.restart',
+      root: box.container,
+      input: { caseId: b.id },
+    });
+    assert.equal(final.ok, true);
+    const data = final.ok ? final.data as Record<string, unknown> : {};
+    assert.equal(data.caseId, b.id);
+    assert.equal(data.workspace, path.join(box.container, 'workspace', b.id));
+    assert.equal(data.handoff, 'resume from the second case');
+    assert.equal(Project.activeCaseId(box.container), b.id);
+    assert.equal(b.project.file().status, 'active');
+    assert.ok((b.project.file().counters.restart ?? 0) >= 6);
+    assert.equal(b.project.file().counters.command, 0);
+  } finally {
+    box.cleanup();
+  }
+});
+
 test('case.clearNegatives clears soft entries without resetting the budget', async () => {
   const tp = makeProject();
   try {
@@ -463,7 +588,7 @@ test('negative gate: hard-blocked route returns CONFLICT without executing', asy
   }
 });
 
-test('case.continue resets budget without consuming restart cap', async () => {
+test('case.continue resets budget without consuming a restart', async () => {
   const tp = makeProject();
   try {
     const file = tp.project.file();

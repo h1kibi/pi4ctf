@@ -14,6 +14,64 @@ export interface TestProject {
   cleanup: () => void;
 }
 
+export interface ContainerCase {
+  container: string;
+  root: string;
+  id: string;
+  project: Project;
+  oraclePath: string;
+  flag: string;
+  cleanup: () => void;
+}
+
+export function makeContainerCases(opts?: {
+  flag?: string;
+}): { container: string; cases: ContainerCase[]; cleanup: () => void } {
+  const flag = opts?.flag ?? 'flag{c0nt41n3r}';
+  const container = fs.mkdtempSync(path.join(os.tmpdir(), 'pi4ctf-container-'));
+  const challenges = path.join(container, 'challenges');
+  fs.mkdirSync(challenges, { recursive: true });
+  const oraclePath = path.join(challenges, 'oracle.json');
+  fs.writeFileSync(
+    oraclePath,
+    JSON.stringify({ flagSha256: crypto.createHash('sha256').update(flag).digest('hex') }, null, 2),
+  );
+  const ids = ['20260101-0001', '20260101-0002'];
+  const cases = ids.map((id, index) => {
+    const root = path.join(challenges, `case-${index + 1}`);
+    fs.mkdirSync(root, { recursive: true });
+    const project = Project.initCase(
+      container,
+      root,
+      {
+        id: `case-${index + 1}`,
+        title: `case-${index + 1}`,
+        goal: 'hold the flag',
+        category: 'misc',
+        flagFormat: 'flag\\{[^}]+\\}',
+        backend: 'host',
+        oracle: { type: 'local', ref: '../oracle.json' },
+        allowedHosts: ['*'],
+      },
+      id,
+    );
+    return {
+      container,
+      root,
+      id,
+      project,
+      oraclePath,
+      flag,
+      cleanup: () => {},
+    };
+  });
+  return {
+    container,
+    cases,
+    cleanup: () => fs.rmSync(container, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }),
+  };
+}
+
 export function makeProject(opts?: {
   backend?: 'host' | 'docker';
   dockerImage?: string;
