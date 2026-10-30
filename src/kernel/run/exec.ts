@@ -17,7 +17,7 @@ import { targetFromEnv, targetRef } from '../target.js';
 import { parseEvidenceItems, type ItemSummary } from '../evidence/items.js';
 import type { ProcessOutcome, SemanticFailure } from '../types.js';
 import { execHostOf, prepareDocker, prepareHost, type ExecHost, type RunRequest } from './prepare.js';
-import { runRaw, type RawRun } from './process.js';
+import { runRaw, validateStdin, PreSpawnError, type RawRun } from './process.js';
 import { hasFilterStage, streamInfo, stripHostNoise } from './stream.js';
 import { DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS } from './limits.js';
 
@@ -128,6 +128,7 @@ export async function runExec(project: Project, req: RunRequest): Promise<RunRes
   const file = project.file();
   const timeoutMs = Math.min(req.timeoutMs ?? DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS);
   if (timeoutMs <= 0) throw new KernelError('INVALID_REQUEST', 'timeoutMs must be positive');
+  validateStdin(req.stdin);
 
   const execHost = execHostOf(project);
   const prep =
@@ -145,6 +146,13 @@ export async function runExec(project: Project, req: RunRequest): Promise<RunRes
   try {
     raw = await runRaw(prep, timeoutMs, req.stdin);
   } catch (err) {
+    if (err instanceof PreSpawnError) {
+      try {
+        project.releaseCommand();
+      } catch {
+        /* keep the original failure; overcharge is safer than over-execute */
+      }
+    }
     if (err instanceof KernelError) throw err;
     const message = err instanceof Error ? err.message : String(err);
     throw new KernelError('INTERNAL', `exec failed: ${message}`);

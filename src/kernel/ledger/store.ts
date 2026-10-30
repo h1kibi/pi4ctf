@@ -27,6 +27,51 @@ export interface PacketState {
   issues: string[];
 }
 
+function isStreamRef(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null) return false;
+  const stream = value as Record<string, unknown>;
+  return typeof stream.excerpt === 'string' && typeof stream.shapedRef === 'string';
+}
+
+/** Minimal shape required by packetState and packet rendering. Invalid rows
+ *  become integrity issues instead of crashing context/handoff. */
+function validPacketRow(dir: string, row: unknown): boolean {
+  if (typeof row !== 'object' || row === null || Array.isArray(row)) return false;
+  const r = row as Record<string, unknown>;
+  if (typeof r.id !== 'string') return false;
+  if (dir === 'outcomes') {
+    if (typeof r.ts !== 'number'
+      || typeof r.canonicalKey !== 'string'
+      || typeof r.intentClass !== 'string'
+      || !isStreamRef(r.stdout)
+      || !isStreamRef(r.stderr)) return false;
+    if (r.items !== undefined) {
+      if (typeof r.items !== 'object' || r.items === null || Array.isArray(r.items)) return false;
+      const ids = (r.items as Record<string, unknown>).ids;
+      if (ids !== undefined && !Array.isArray(ids)) return false;
+    }
+    return true;
+  }
+  if (dir === 'claims') {
+    return typeof r.state === 'string'
+      && typeof r.claimType === 'string'
+      && typeof r.text === 'string'
+      && Array.isArray(r.refs)
+      && r.refs.every((ref) => typeof ref === 'string');
+  }
+  if (dir === 'facts') {
+    return typeof r.claimType === 'string'
+      && typeof r.predicate === 'string'
+      && Array.isArray(r.observationRefs);
+  }
+  if (dir === 'negatives') {
+    return typeof r.signature === 'string'
+      && typeof r.failureClass === 'string'
+      && typeof r.blockScope === 'string';
+  }
+  return true;
+}
+
 export class Ledger {
   constructor(private readonly project: Project) {}
 
@@ -323,41 +368,31 @@ export class Ledger {
    *  except legs referenced by open claims (differential exemption,
    *  docs/design.md §4.1). */
   recentOutcomes(limit: number): ProcessOutcome[] {
-    const exempt = new Set<string>();
-    for (const claim of this.openClaims()) {
-      for (const ref of claim.refs) {
-        // Item refs reserve their parent outcome in the packet; the parent is
-        // the dedupe unit over the wire.
-        exempt.add(ref);
-        exempt.add(ref.split('.')[0]);
-      }
-    }
-    const seen = new Set<string>();
-    const out: ProcessOutcome[] = [];
-    for (const o of [...this.listOutcomes()].reverse()) {
-      if (exempt.has(o.id)) {
-        out.push(o);
-        continue;
-      }
-      if (seen.has(o.canonicalKey)) continue;
-      seen.add(o.canonicalKey);
-      out.push(o);
-    }
-    return out.slice(0, limit);
+    return this.packetState(limit).recent;
   }
 
   private listDirWithIssues<T>(dir: string): { items: T[]; issues: string[] } {
     const abs = path.join(this.project.ctfDir, dir);
     if (!fs.existsSync(abs)) return { items: [], issues: [] };
-    const names = fs
-      .readdirSync(abs)
-      .filter((n) => n.endsWith('.json'))
-      .sort();
+    let names: string[];
+    try {
+      names = fs
+        .readdirSync(abs)
+        .filter((n) => n.endsWith('.json'))
+        .sort();
+    } catch {
+      return { items: [], issues: [`unreadable dir: ${dir}`] };
+    }
     const items: T[] = [];
     const issues: string[] = [];
     for (const name of names) {
       try {
-        items.push(readJson<T>(path.join(abs, name)));
+        const row = readJson<unknown>(path.join(abs, name));
+        if (!validPacketRow(dir, row)) {
+          issues.push(`invalid row: ${dir}/${name}`);
+          continue;
+        }
+        items.push(row as T);
       } catch {
         issues.push(`unreadable json: ${dir}/${name}`);
       }

@@ -6,7 +6,7 @@
  * exec.
  */
 import { Buffer } from 'node:buffer';
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { KernelError } from '../error.js';
 import { baseEnv } from '../sysutil.js';
 import type { Prepared } from './prepare.js';
@@ -14,6 +14,21 @@ import type { Prepared } from './prepare.js';
 export const ARTIFACT_CAP = 64 * 1024 * 1024;
 const STDIN_CAP = 1024 * 1024;
 const GRACE_MS = 2_000;
+
+/** Rejection before a child process exists; callers may release a reserved
+ *  command slot. Once a child has a pid, the execution keeps its slot. */
+export class PreSpawnError extends KernelError {
+  constructor(code: 'NOT_FOUND' | 'LIMIT', message: string) {
+    super(code, message);
+    this.name = 'PreSpawnError';
+  }
+}
+
+export function validateStdin(stdin: string | undefined): void {
+  if (stdin !== undefined && Buffer.byteLength(stdin) > STDIN_CAP) {
+    throw new PreSpawnError('LIMIT', `stdin exceeds ${STDIN_CAP} bytes`);
+  }
+}
 
 export interface RawRun {
   exit: number | null;
@@ -48,18 +63,22 @@ function killTree(pid: number, signal: 'SIGTERM' | 'SIGKILL'): void {
 export function runRaw(prep: Prepared, timeoutMs: number, stdin: string | undefined): Promise<RawRun> {
   // Validate stdin BEFORE spawning so an oversized input never leaves an
   // orphan child (review R10).
-  if (stdin !== undefined && Buffer.byteLength(stdin) > STDIN_CAP) {
-    return Promise.reject(new KernelError('LIMIT', `stdin exceeds ${STDIN_CAP} bytes`));
-  }
+  validateStdin(stdin);
   const { promise, resolve, reject } = Promise.withResolvers<RawRun>();
     const started = Date.now();
-    const child = spawn(prep.argv[0], prep.argv.slice(1), {
-      cwd: prep.cwd,
-      env: { ...baseEnv(), ...prep.env },
-      detached: process.platform !== 'win32',
-      stdio: ['pipe', 'pipe', 'pipe'],
-      windowsHide: true,
-    });
+    let child: ChildProcess;
+    try {
+      child = spawn(prep.argv[0], prep.argv.slice(1), {
+        cwd: prep.cwd,
+        env: { ...baseEnv(), ...prep.env },
+        detached: process.platform !== 'win32',
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
+      });
+    } catch (err) {
+      reject(new PreSpawnError('NOT_FOUND', `spawn failed: ${err instanceof Error ? err.message : String(err)}`));
+      return promise;
+    }
     let timedOut = false;
     let settled = false;
     // Chunk arrays: concat once at the end (review R10).
@@ -109,7 +128,9 @@ export function runRaw(prep: Prepared, timeoutMs: number, stdin: string | undefi
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      reject(new KernelError('NOT_FOUND', `spawn failed: ${err.message}`));
+      reject(child.pid === undefined
+        ? new PreSpawnError('NOT_FOUND', `spawn failed: ${err.message}`)
+        : new KernelError('NOT_FOUND', `spawn failed: ${err.message}`));
     });
 
     child.on('close', (code, signal) => {

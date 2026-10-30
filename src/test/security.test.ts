@@ -378,6 +378,50 @@ test('negative gate: hard-blocked route returns CONFLICT without executing', asy
   }
 });
 
+test('packet degrades on invalid rows and unreadable state dirs', async () => {
+  const tp = makeProject();
+  try {
+    fs.mkdirSync(path.join(tp.project.ctfDir, 'facts'), { recursive: true });
+    fs.writeFileSync(path.join(tp.project.ctfDir, 'facts', 'f9998.json'), 'null');
+    fs.writeFileSync(
+      path.join(tp.project.ctfDir, 'claims', 'c9998.json'),
+      JSON.stringify({ id: 'c9998', state: 'proposed', claimType: 'observed', text: 'x', refs: [123] }),
+    );
+    fs.writeFileSync(
+      path.join(tp.project.ctfDir, 'outcomes', 'cmd-9998.json'),
+      JSON.stringify({
+        id: 'cmd-9998',
+        ts: 1,
+        canonicalKey: 'k',
+        intentClass: 'exec-local',
+        stdout: { excerpt: '', shapedRef: 'a' },
+        stderr: { excerpt: '', shapedRef: 'b' },
+        items: { ids: {} },
+      }),
+    );
+    fs.rmSync(path.join(tp.project.ctfDir, 'negatives'), { recursive: true, force: true });
+    fs.writeFileSync(path.join(tp.project.ctfDir, 'negatives'), 'not a directory');
+    fs.writeFileSync(
+      path.join(tp.project.ctfDir, 'chal.json'),
+      JSON.stringify({ endpoint: null, files: [{ path: 'bad', elf: {} }], libc: [], otherFiles: [], notes: [] }),
+    );
+
+    const ctx = await dispatch({ op: 'case.context', root: tp.root });
+    assert.equal(ctx.ok, true);
+    assert.equal(ctx.ok ? ctx.data.integrity : '', 'degraded');
+    const packet = ctx.ok ? String(ctx.data.packet) : '';
+    assert.match(packet, /invalid row: facts\/f9998\.json/);
+    assert.match(packet, /invalid row: claims\/c9998\.json/);
+    assert.match(packet, /invalid row: outcomes\/cmd-9998\.json/);
+    assert.match(packet, /unreadable dir: negatives/);
+
+    const handoff = await dispatch({ op: 'case.handoff', root: tp.root });
+    assert.equal(handoff.ok, true);
+  } finally {
+    tp.cleanup();
+  }
+});
+
 test('doctor reports corrupt state JSON; listFacts stops skipping it', async () => {
   const tp = makeProject();
   try {

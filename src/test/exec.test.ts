@@ -30,6 +30,35 @@ test('exec exit 0 -> processFailure null, artifacts on disk', async () => {
   }
 });
 
+test('oversized stdin rejects before reserving command budget', async () => {
+  const tp = makeProject();
+  try {
+    await assert.rejects(
+      runExec(tp.project, {
+        argv: [NODE, '-e', 'console.log("never")'],
+        stdin: 'x'.repeat(1024 * 1024 + 1),
+      }),
+      /stdin exceeds/,
+    );
+    assert.equal(tp.project.file().counters.command, 0);
+  } finally {
+    tp.cleanup();
+  }
+});
+
+test('spawn failure releases reserved command budget', async () => {
+  const tp = makeProject();
+  try {
+    await assert.rejects(
+      runExec(tp.project, { argv: ['definitely-not-a-real-binary-zzz'] }),
+      /spawn failed/,
+    );
+    assert.equal(tp.project.file().counters.command, 0);
+  } finally {
+    tp.cleanup();
+  }
+});
+
 test('exec nonzero exit -> processFailure nonzero-exit', async () => {
   const tp = makeProject();
   try {

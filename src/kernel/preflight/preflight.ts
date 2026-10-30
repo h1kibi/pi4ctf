@@ -17,7 +17,76 @@ import type {
   PreflightResult,
 } from './types.js';
 
+function isRelativePath(value: unknown): value is string {
+  return typeof value === 'string'
+    && value.length > 0
+    && !path.isAbsolute(value)
+    && !value.split('/').includes('..');
+}
+
+/** Provider output is untrusted at the boundary: reject rows that would make
+ *  packet/digest code throw after the scan is cached. */
+function validateScan(scan: ChallengeScan): void {
+  if (!scan
+    || typeof scan !== 'object'
+    || !Array.isArray(scan.files)
+    || !Array.isArray(scan.libc)
+    || !Array.isArray(scan.otherFiles)
+    || !Array.isArray(scan.notes)
+    || !Number.isInteger(scan.otherFilesTotal)
+    || scan.otherFilesTotal < scan.otherFiles.length) {
+    throw new KernelError('INTERNAL', 'invalid preflight scan: expected arrays and otherFilesTotal');
+  }
+  for (const note of scan.notes) {
+    if (typeof note !== 'string') throw new KernelError('INTERNAL', 'invalid preflight scan: note must be a string');
+  }
+  for (const file of scan.files) {
+    if (!file
+      || typeof file !== 'object'
+      || Array.isArray(file)
+      || !isRelativePath(file.path)
+      || typeof file.bytes !== 'number'
+      || typeof file.sha256 !== 'string'
+      || !file.elf
+      || typeof file.elf !== 'object'
+      || Array.isArray(file.elf)
+      || typeof file.elf.bits !== 'number'
+      || typeof file.elf.type !== 'string'
+      || !Array.isArray(file.elf.needed)
+      || (file.elf.interpreter !== null && typeof file.elf.interpreter !== 'string')
+      || (file.elf.buildId !== null && typeof file.elf.buildId !== 'string')) {
+      throw new KernelError('INTERNAL', `invalid preflight scan: malformed ELF row ${String(file?.path ?? '?')}`);
+    }
+  }
+  for (const libc of scan.libc) {
+    if (!libc
+      || typeof libc !== 'object'
+      || Array.isArray(libc)
+      || !isRelativePath(libc.path)
+      || typeof libc.bytes !== 'number'
+      || typeof libc.sha256 !== 'string'
+      || (libc.buildId !== null && typeof libc.buildId !== 'string')
+      || (libc.version !== null && typeof libc.version !== 'string')
+      || (libc.soname !== null && typeof libc.soname !== 'string')
+      || typeof libc.interpreter !== 'boolean') {
+      throw new KernelError('INTERNAL', 'invalid preflight scan: malformed libc row');
+    }
+  }
+  for (const file of scan.otherFiles) {
+    if (!file
+      || typeof file !== 'object'
+      || Array.isArray(file)
+      || !isRelativePath(file.path)
+      || typeof file.bytes !== 'number'
+      || typeof file.sha256 !== 'string'
+      || typeof file.format !== 'string') {
+      throw new KernelError('INTERNAL', 'invalid preflight scan: malformed other-file row');
+    }
+  }
+}
+
 export function recordPreflight(project: Project, scan: ChallengeScan): PreflightResult {
+  validateScan(scan);
   const endpoint = project.file().target ?? null;
   const { files, libc, otherFiles, otherFilesTotal, notes } = scan;
   if (!Array.isArray(files) || !Array.isArray(libc) || !Array.isArray(otherFiles) || !Array.isArray(notes)) {
@@ -76,11 +145,41 @@ export function recordPreflight(project: Project, scan: ChallengeScan): Prefligh
   };
 }
 
+function isChallengeMetadata(value: unknown): value is ChallengeMetadata {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const m = value as Record<string, unknown>;
+  if (!Array.isArray(m.files)
+    || !Array.isArray(m.libc)
+    || !Array.isArray(m.otherFiles)
+    || !Array.isArray(m.notes)
+    || (m.endpoint !== null && (typeof m.endpoint !== 'object' || Array.isArray(m.endpoint)))
+    || (m.otherFilesTotal !== undefined && typeof m.otherFilesTotal !== 'number')) return false;
+  for (const note of m.notes) if (typeof note !== 'string') return false;
+  for (const file of m.files) {
+    if (!file || typeof file !== 'object' || Array.isArray(file)) return false;
+    const row = file as Record<string, unknown>;
+    const elf = row.elf;
+    if (typeof row.path !== 'string'
+      || !elf || typeof elf !== 'object' || Array.isArray(elf)
+      || !Array.isArray((elf as Record<string, unknown>).needed)) return false;
+  }
+  for (const libc of m.libc) {
+    if (!libc || typeof libc !== 'object' || Array.isArray(libc)
+      || typeof (libc as Record<string, unknown>).path !== 'string') return false;
+  }
+  for (const file of m.otherFiles) {
+    if (!file || typeof file !== 'object' || Array.isArray(file)
+      || typeof (file as Record<string, unknown>).path !== 'string') return false;
+  }
+  return true;
+}
+
 export function readChallenge(project: Project): ChallengeMetadata | null {
   const p = path.join(project.ctfDir, 'chal.json');
   if (!fs.existsSync(p)) return null;
   try {
-    return JSON.parse(fs.readFileSync(p, 'utf8')) as ChallengeMetadata;
+    const parsed = JSON.parse(fs.readFileSync(p, 'utf8')) as unknown;
+    return isChallengeMetadata(parsed) ? parsed : null;
   } catch {
     return null;
   }

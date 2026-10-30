@@ -188,23 +188,17 @@ export class Project {
   }
 
   /** Allocate the next monotonic id for a kind, under lock. */
-  allocId(kind: 'command' | 'claim' | 'fact' | 'negative' | 'session'): { id: string; seq: number } {
+  allocId(kind: 'claim' | 'fact' | 'negative' | 'session'): { id: string; seq: number } {
     const prefixes: Record<string, string> = {
-      command: 'cmd-',
       claim: 'c',
       fact: 'f',
       negative: 'n',
       session: 's',
     };
-    let commandSeq = 0;
     const file = this.mutateFile((f) => {
-      if (kind === 'command') {
-        commandSeq = allocateCommand(f, this.ctfDir, false);
-        return;
-      }
       f.counters[kind] = (f.counters[kind] ?? 0) + 1;
     });
-    const seq = kind === 'command' ? commandSeq : file.counters[kind];
+    const seq = file.counters[kind];
     return { id: `${prefixes[kind]}${String(seq).padStart(4, '0')}`, seq };
   }
 
@@ -216,6 +210,14 @@ export class Project {
       commandSeq = allocateCommand(f, this.ctfDir, true);
     });
     return { id: `cmd-${String(commandSeq).padStart(4, '0')}`, seq: commandSeq };
+  }
+
+  /** Release a reservation that never produced a child process. The command
+   *  sequence stays monotonic; only the budget counter is returned. */
+  releaseCommand(): void {
+    this.mutateFile((f) => {
+      f.counters.command = Math.max(0, (f.counters.command ?? 0) - 1);
+    });
   }
 
   /** Last successful flagFormat change, for audit in the flag response. */
