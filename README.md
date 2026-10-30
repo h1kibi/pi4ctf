@@ -27,7 +27,7 @@
 | 状态 | `.ctf/`：events + artifacts + projections | 不变（文件即状态，无 daemon / DB） |
 | UI | `ctx.ui.notify` 文本提示 + `/ctf` 子命令 | TUI：状态文本 + HUD + 卡片 + `/ctf` overlay（只读） |
 | 记忆 | `env_memory`（宿主级环境事实） | 文件型 verified lesson（`memory-design.md`，later） |
-| 验证 | `npm test`：214 测试 / 210 通过 / 4 跳过（Windows 无 PTY） | Rust 性能指标：<5 MB、<20 ms 冷启动、RSS <32 MB |
+| 验证 | `npm test`：219 测试 / 214 通过 / 5 跳过（Windows 无 PTY；Docker pwn 测试需本机镜像） | Rust 性能指标：<5 MB、<20 ms 冷启动、RSS <32 MB |
 
 `docs/` 里标 `later` 或写“目标”的内容都**不代表已经存在**；代码里没有的东西不要当能力用。
 
@@ -110,9 +110,13 @@ Pwn 题使用 Docker backend：
 ```
 
 使用你环境中的 pwn 镜像（需含 pwntools、gdb、ROP 工具链；镜像名由 `dockerImage` 指定）。`run` 和 `session` 都在容器内执行；
-目标服务在宿主机时用 `host.docker.internal:<port>`。docker 运行带
+`session.cwd: "workspace"` 会映射到 `/challenge/workspace`，其他相对路径映射到 `/challenge/...`。
+目标服务在宿主机时用 `host.docker.internal:<port>`；Linux 宿主自动加
+`--add-host=host.docker.internal:host-gateway`。docker 运行带
 `--cap-add SYS_PTRACE`，`proc` 可在容器内读 PID 1 的 maps/mem；host session 的
 mem 读取仍受 `kernel.yama.ptrace_scope` 限制。
+POSIX 宿主可用 Docker `-t`；Windows 的 Docker CLI 不能通过 pipe 挂 TTY，`tty:true` 会明确拒绝，改用 WSL 或 pwntools `stdin=PTY`。
+`npm run test:pwn-image -- <image>` 可检查镜像里的 `python3`/`pwntools`/`gdb`/`checksec`/`patchelf`。
 
 之后直接用四个动词：`run` / `session` / `claim` / `flag`。模型实际看到 pi4ctf 的 **16 个工具**（另有 MCP 工具，如 `mcp__ctf_rag__ctf_rag`）：4 动词 + 12 helpers —
 `ctf_init`、`env_memory`、`proc`、`artifact_ingest`、`case_preflight`、`case_evidence`、`case_configure`、`case_plan`、
@@ -163,8 +167,8 @@ pi mcp list --json   # 机器可读状态
 ### 已安装状态
 
 安装方式：`pi install <pi4ctf-package>`；安装后 `pi list` 应显示该 package。
-Pwn 使用显式 `dockerImage`（`run`/`session` 都在容器内）；
-当前限制：session 默认 pipe-only；POSIX 宿主可 `session open tty:true` 获得 PTY，Windows 无 PTY 路径；Kali 全量镜像尚未实机构建。
+Pwn 使用显式 `dockerImage`（`run`/`session` 都在容器内）；Docker pwn smoke 覆盖 pwntools 连宿主机 target、session cwd、容器 `proc`。
+当前限制：Docker TTY 只在 POSIX 宿主可用，Windows 的 Docker CLI 不能通过 pipe 挂 TTY；host session 的 PTY 也只在 POSIX；Kali 全量镜像尚未实机构建。
 
 ## 形态（当前）
 
@@ -262,6 +266,7 @@ flowchart LR
 - `env_memory recall` 默认只返回 700 字符以内的 bounded summary；需要逐条路径时传 `records:true`。`capability=<组>` 按 pwn/reverse/web/... 过滤，`ids:[...]` 用于精确查询。
 - `env_memory probe image=<image> ids=[gcc,gdb,gdbserver]` 可在不切换 project backend 的情况下探测镜像，结果写入独立 `docker/<image>`；`recall image=<image>` 读取同一张表。
 - 可选镜像 smoke：`npm run test:image -- <image>`；使用临时 `PI4CTF_HOME`，不会污染用户 store。
+- pwn 工具链镜像检查：`npm run test:pwn-image -- <image>`；检查 `gdb`/`python3`/`pwntools`/`checksec`/`patchelf`，使用 `--entrypoint sh` 绕开 agent 镜像入口。
 - `probe` 优先探测 `remember`/`probe` 记录的声明路径；声明路径存在但不在 PATH 时返回 `absent:false` + `onPath:false`，不会把已知路径误判为未安装。Windows `.cmd/.bat` wrapper 会记录 `wrapperPath`、可解析的 `wrapperCwd` 和 `wrapperSemanticsUnknown`。
 - probe 成功后，即使路径不在 PATH（`onPath:false`），`status` 仍为 `verified`；`needsReconfirmation` 只在未 probe 的用户声明、wrapper 破损/修复或真实 abnormal 时为真。`tools[]` 与 `absent[]` 不再出现同一 id。
 - `recall` 支持 `ids:[...]` 和 `origin` 过滤；`origin=test` 可用于隔离早期测试数据。

@@ -14,7 +14,7 @@ import { Ledger } from '../kernel/ledger/store.js';
 import { commandClassOf } from '../kernel/classify/classify.js';
 import { signature } from '../kernel/shape/signature.js';
 import { commandExists } from '../kernel/sysutil.js';
-import { execHostOf, prepareDocker, prepareHost } from '../kernel/run/prepare.js';
+import { dockerHostArgs, execHostOf, prepareDocker, prepareHost } from '../kernel/run/prepare.js';
 import { makeContainerCases, makeProject } from './helpers.js';
 
 const NODE = process.execPath;
@@ -363,7 +363,7 @@ test('case container stores timestamped cases, per-case workspaces, and an activ
   }
 });
 
-test('docker runs mount the case workspace, not a shared root workspace', () => {
+test('docker runs mount the case workspace and Linux host gateway', () => {
   const box = makeContainerCases();
   try {
     const first = box.cases[0];
@@ -372,6 +372,8 @@ test('docker runs mount the case workspace, not a shared root workspace', () => 
     const prepared = prepareDocker(execHostOf(first.project), { argv: ['true'] });
     assert.ok(prepared.argv.includes(`${first.project.workspace}:/challenge/workspace:rw`));
     assert.ok(!prepared.argv.includes(`${path.join(first.root, 'workspace')}:/challenge/workspace:rw`));
+    assert.deepEqual(dockerHostArgs('linux'), ['--add-host', 'host.docker.internal:host-gateway']);
+    assert.deepEqual(dockerHostArgs('win32'), []);
   } finally {
     box.cleanup();
   }

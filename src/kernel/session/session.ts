@@ -19,8 +19,9 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { KernelError } from '../error.js';
-import { atomicWriteFile, sha256 } from '../fsutil.js';
+import { atomicWriteFile, resolveInside, sha256 } from '../fsutil.js';
 import { Project } from '../project.js';
+import { dockerHostArgs } from '../run/prepare.js';
 import { baseEnv, commandExists } from '../sysutil.js';
 import { shape } from '../shape/shape.js';
 
@@ -98,6 +99,38 @@ const PTY_WRAP = [
   '        pass',
 ].join('\n');
 
+interface SessionCwd {
+  host: string;
+  container: string;
+  workspace: boolean;
+}
+
+/** Resolve a session cwd once; host spawn and Docker -w use different roots. */
+function resolveSessionCwd(project: Project, cwd: string | undefined, backend: 'host' | 'docker'): SessionCwd {
+  const raw = (cwd ?? '').trim();
+  if (!raw) {
+    return {
+      host: project.root,
+      container: backend === 'docker' ? '/challenge/workspace' : project.root,
+      workspace: backend === 'docker',
+    };
+  }
+  const normalized = raw.replace(/\\/g, '/');
+  let hostPath: string;
+  let workspace = false;
+  if (normalized === 'workspace' || normalized.startsWith('workspace/')) {
+    const rest = normalized.slice('workspace'.length).replace(/^\/+/, '');
+    hostPath = rest ? resolveInside(project.workspace, rest) : project.workspace;
+    workspace = true;
+  } else {
+    hostPath = resolveInside(project.root, raw);
+  }
+  const rel = (from: string) => path.relative(from, hostPath).split(path.sep).join('/');
+  const inside = workspace ? rel(project.workspace) : rel(project.root);
+  const container = `${workspace ? '/challenge/workspace' : '/challenge'}${inside ? `/${inside}` : ''}`;
+  return { host: hostPath, container, workspace };
+}
+
 interface SessionState {
   id: string;
   argv: string[];
@@ -145,6 +178,15 @@ export class SessionManager {
     }
     const file = this.project.file();
     const { id } = this.project.allocId('session');
+    const wantsTty = input.tty === true;
+    if (wantsTty && process.platform === 'win32') {
+      throw new KernelError(
+        'UNSUPPORTED',
+        'tty sessions require a POSIX host (Docker --tty cannot attach through a Windows pipe); use WSL or pwntools stdin=PTY',
+      );
+    }
+    const cwd = resolveSessionCwd(this.project, input.cwd, file.backend);
+    if (cwd.workspace) fs.mkdirSync(cwd.host, { recursive: true });
     const program = input.argv[0];
     let command = program;
     let commandArgs = input.argv.slice(1);
@@ -159,11 +201,12 @@ export class SessionManager {
       command = 'docker';
       container = `pi4ctf-${id}-${sha256(this.project.root).slice(0, 8)}`;
       commandArgs = [
-        'run', '--rm', '-i', ...(input.tty ? ['-t'] : []), '--name', container, '--network', 'bridge', '--cap-add', 'SYS_PTRACE',
+        'run', '--rm', '-i', ...(wantsTty ? ['-t'] : []), '--name', container, '--network', 'bridge',
+        ...dockerHostArgs(), '--cap-add', 'SYS_PTRACE',
         '-e', 'TERM=xterm', '-e', 'PYTHONUNBUFFERED=1',
         '-v', `${this.project.root}:/challenge:ro`,
         '-v', `${workspace}:/challenge/workspace:rw`,
-        '-w', '/challenge/workspace',
+        '-w', cwd.container,
         file.dockerImage,
         ...input.argv,
       ];
@@ -172,20 +215,15 @@ export class SessionManager {
       // Fail fast on unknown host binaries (review C3).
       throw new KernelError('NOT_FOUND', `session program not found: ${program}`);
     }
-    const wantsTty = input.tty === true;
-    if (wantsTty) {
-      if (process.platform === 'win32') {
-        throw new KernelError(
-          'UNSUPPORTED',
-          'tty sessions require a POSIX host; use a scripted approach (pwntools stdin=PTY) or a Docker image with a PTY helper',
-        );
-      }
+    // Docker's -t allocates the container TTY; the host only needs a PTY when
+    // the session itself runs on a POSIX host.
+    if (wantsTty && !container) {
       if (!commandExists('python3')) {
         throw new KernelError('UNSUPPORTED', 'tty sessions require python3 on the host to allocate the pseudo-terminal');
       }
       // Allocate the PTY and clear ECHO before exec; canonical mode is kept so
       // shell `read`, gdb and nc still work. Programs that need raw mode set it
-      // themselves. Resize is still not forwarded.
+      // themselves. Resize is not forwarded to Docker's container TTY.
       const wrapped = [command, ...commandArgs];
       command = 'python3';
       commandArgs = ['-c', PTY_WRAP, ...wrapped];
@@ -194,7 +232,7 @@ export class SessionManager {
     }
     const artifact = `artifacts/session-${id}.log`;
     const child = spawn(command, commandArgs, {
-      cwd: this.project.root,
+      cwd: cwd.host,
       env: commandEnv,
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
@@ -298,7 +336,7 @@ export class SessionManager {
     const width = Math.min(1000, Math.max(1, Math.floor(cols)));
     const height = Math.min(1000, Math.max(1, Math.floor(rows)));
     let applied = false;
-    if (s.state.tty) {
+    if (s.state.tty && !s.state.container) {
       try {
         fs.writeFileSync(this.resizePath(id), `${width} ${height}`);
         s.child.kill('SIGWINCH');

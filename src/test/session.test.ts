@@ -35,6 +35,27 @@ test('session write/read returns increments; close kills process', async () => {
   }
 });
 
+test('session cwd maps workspace and stays inside the selected root', async () => {
+  const tp = makeProject();
+  try {
+    const mgr = new SessionManager(tp.project);
+    const s = mgr.open({
+      argv: [NODE, '-e', 'console.log(process.cwd())'],
+      cwd: 'workspace',
+    });
+    await settle(500);
+    const out = await mgr.read(s.id, 800);
+    assert.equal(out.data.trim(), tp.project.workspace);
+    mgr.closeAll();
+    assert.throws(
+      () => mgr.open({ argv: [NODE, '-e', ''], cwd: 'workspace/../escape' }),
+      /path escapes/,
+    );
+  } finally {
+    tp.cleanup();
+  }
+});
+
 test('session max 4 enforced', () => {
   const tp = makeProject();
   try {

@@ -139,7 +139,7 @@ test/
 }
 ```
 
-`backend` 只接受 `host | wsl2`；`docker` 在 v1 返回 `UNSUPPORTED`。`oracle` v1 只接受 `local`；CTFd 适配器后置。
+当前 TS 实现接受 `host | docker`；`docker` 由 adapter/kernel 直接启动容器。Rust 目标 v1 计划只做 `host | wsl2`，Docker 后置到 M8。`oracle` 当前只接受 `local`；CTFd 适配器后置。
 
 ### 2.2 `events.jsonl`
 
@@ -503,7 +503,7 @@ v1：
 
 - `HostBackend`：Windows 本机；路径原样；PowerShell 可显式选择。
 - `Wsl2Backend`：`wsl.exe -d <distro> --cd <mapped> -- <argv>`；Windows 路径用 `wslpath -a` 映射；`doctor` 检查 distro 与工具。
-- `DockerBackend`：v1 返回 `UNSUPPORTED`；M8 后再实现。
+- `DockerBackend`：当前 TS 实现支持 `run`/`session`/`proc`；Rust 目标延后到 M8。Linux 自动加 `host.docker.internal:host-gateway`，容器启用 `SYS_PTRACE`。
 
 后端只负责“怎么启动”和“路径怎么映射”，不解析 CTF 内容。
 

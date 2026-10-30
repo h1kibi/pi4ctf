@@ -105,6 +105,7 @@ async function handleSessionLine(
     if (!root) throw new KernelError('INVALID_REQUEST', 'root is required');
     const project = Project.open(root);
     const argv = (msg.argv as string[]) ?? [];
+    const cwd = typeof msg.cwd === 'string' ? msg.cwd : undefined;
     // Goal contract applies to session targets too (ADR 0003 §3).
     checkRunScope(project, argv);
     let mgr = byRoot.get(project.root);
@@ -113,7 +114,7 @@ async function handleSessionLine(
       byRoot.set(project.root, mgr);
     }
     assertCaseBudget(project);
-    const state = mgr.open({ argv, tty: msg.tty === true });
+    const state = mgr.open({ argv, tty: msg.tty === true, cwd });
     // A session is one long-running command; its I/O is not charged per
     // keystroke. Counting the open prevents a post-budget session bypass.
     try {

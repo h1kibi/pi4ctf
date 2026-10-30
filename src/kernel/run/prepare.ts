@@ -140,6 +140,12 @@ export function prepareHost(host: ExecHost, req: RunRequest): Prepared {
   return { argv, userArgv, cwd, shell, tempFile, targetHint: targetHint ?? targetOf(userArgv), env: mergeEnv(req.target ?? host.target, req.env) };
 }
 
+/** Linux containers need an explicit host-gateway alias; Docker Desktop
+ *  already resolves host.docker.internal. */
+export function dockerHostArgs(platform: NodeJS.Platform = process.platform): string[] {
+  return platform === 'linux' ? ['--add-host', 'host.docker.internal:host-gateway'] : [];
+}
+
 export function prepareDocker(host: ExecHost, req: RunRequest): Prepared {
   const image = host.dockerImage;
   if (!image) {
@@ -172,6 +178,7 @@ export function prepareDocker(host: ExecHost, req: RunRequest): Prepared {
     '--rm',
     '--network',
     'bridge',
+    ...dockerHostArgs(),
     '--cap-add',
     'SYS_PTRACE',
     '-e',

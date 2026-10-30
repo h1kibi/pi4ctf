@@ -86,6 +86,32 @@ test('rt --session: open/write/read/close over JSON lines', async () => {
   }
 });
 
+test('rt --session: open maps cwd=workspace', async () => {
+  const tp = makeProject();
+  try {
+    const srv = await startServer();
+    srv.send({
+      op: 'open',
+      root: tp.root,
+      argv: [NODE, '-e', 'console.log(process.cwd())'],
+      cwd: 'workspace',
+    });
+    const opened = await srv.next();
+    assert.equal(opened.ok, true);
+    const id = String(opened.id);
+    await settle(500);
+    srv.send({ op: 'read', id, timeoutMs: 600 });
+    const read = await srv.next();
+    assert.equal(read.ok, true);
+    assert.equal(String(read.data).trim(), tp.project.workspace);
+    srv.send({ op: 'close', id });
+    await srv.next();
+    await srv.close();
+  } finally {
+    tp.cleanup();
+  }
+});
+
 test('rt --session: open to non-allowed host is blocked', async () => {
   const tp = makeProject({ allowedHosts: ['127.0.0.1'] });
   try {

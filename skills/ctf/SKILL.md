@@ -78,6 +78,8 @@ Use these tools for challenge work:
   Use it for gdb, nc, python, and servers that need a live process. For a
   persistent local target, open the server with `session` (e.g. socat) once,
   then set `target`/`HOST`/`PORT` on `run` instead of rebuilding it per run.
+  `cwd:"workspace"` (or a subpath) maps to the case workspace; Docker TTY is
+  available on POSIX hosts, Windows uses pipe mode or pwntools `stdin=PTY`.
 - `proc` — read a live session's `/proc`: `maps`, unique `libs`, or `mem` at an
   address. Host sessions use `/proc/<pid>`; docker sessions read PID 1 in the
   tracked container. Output is observation-only; use `artifact_ingest` if it

@@ -36,6 +36,7 @@
     "build": "tsc -p tsconfig.json",
     "test": "tsc -p tsconfig.json && tsc -p tsconfig.extensions.json && node --test --test-concurrency=1 \"dist/test/*.test.js\"",
     "test:image": "npm run build && node scripts/verify-env-image.mjs",
+    "test:pwn-image": "node scripts/verify-pwn-image.mjs",
     "rt": "node dist/rt.js"
   },
   "peerDependencies": {

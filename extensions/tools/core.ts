@@ -170,7 +170,8 @@ export const sessionTool = defineTool({
   promptSnippet: "Drive a persistent interactive CTF session",
   promptGuidelines: [
     "Use session for interactive programs; run/read the returned increments.",
-    "If a program checks isatty or reads /dev/tty, reopen with tty=true on a POSIX host. Windows hosts must script it instead (pwntools stdin=PTY or a Docker image with a PTY helper).",
+    "If a program checks isatty or reads /dev/tty, reopen with tty=true on a POSIX host; Docker -t is POSIX-only. Windows hosts use pwntools stdin=PTY instead.",
+    "Use cwd=\"workspace\" (or a subpath) for the per-case workspace; other relative paths are below the challenge root.",
     "Close sessions when done; the kernel enforces a per-project cap.",
   ],
   parameters: Type.Object({
@@ -184,7 +185,8 @@ export const sessionTool = defineTool({
     argv: Type.Optional(Type.Array(Type.String())),
     data: Type.Optional(Type.String()),
     id: Type.Optional(Type.String()),
-    tty: Type.Optional(Type.Boolean({ description: "Allocate a POSIX pseudo-terminal (python3 helper, echo off) for programs that check isatty or read /dev/tty. POSIX hosts only; resize applies to tty sessions." })),
+    tty: Type.Optional(Type.Boolean({ description: "Allocate a TTY: POSIX host uses a python3 pseudo-terminal; Docker uses container -t. Windows host/Docker TTY is unsupported." })),
+    cwd: Type.Optional(Type.String({ description: "Working directory for session open; workspace or a subpath maps to the case workspace, otherwise relative to the challenge root" })),
     timeoutMs: Type.Optional(Type.Number()),
     cols: Type.Optional(Type.Number()),
     rows: Type.Optional(Type.Number()),
@@ -197,7 +199,12 @@ export const sessionTool = defineTool({
       if (params.op === "open") {
         const root = rootFor(ctx, params.root);
         if (!params.argv || params.argv.length === 0) throw new Error("session open requires argv");
-        const res = await sessions.request("open", { root, argv: params.argv, ...(params.tty ? { tty: true } : {}) });
+        const res = await sessions.request("open", {
+          root,
+          argv: params.argv,
+          ...(params.tty ? { tty: true } : {}),
+          ...(params.cwd !== undefined ? { cwd: params.cwd } : {}),
+        });
         return sessionResult(res, "session.open");
       }
       if (!params.id) throw new Error(`session ${params.op} requires id`);
