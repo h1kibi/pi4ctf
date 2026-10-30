@@ -332,6 +332,41 @@ test('case.clearNegatives clears soft entries without resetting the budget', asy
   }
 });
 
+test('case.time sets a hard checkpoint and continue clears it', async () => {
+  const tp = makeProject();
+  try {
+    const set = await dispatch({ op: 'case.time', root: tp.root, input: { minutes: 10 } });
+    assert.equal(set.ok, true);
+    const at = set.ok && typeof set.data.timeLimitAtMs === 'number' ? set.data.timeLimitAtMs : 0;
+    assert.ok(at > Date.now());
+
+    const file = tp.project.file();
+    fs.writeFileSync(
+      path.join(tp.root, '.ctf', 'project.json'),
+      JSON.stringify({ ...file, timeLimitAtMs: Date.now() - 1000 }, null, 2),
+    );
+    const blocked = await dispatch({
+      op: 'run',
+      root: tp.root,
+      input: { argv: [NODE, '-e', 'console.log("blocked")'] },
+    });
+    assert.equal(blocked.ok, false);
+    assert.equal(blocked.ok ? '' : blocked.error.code, 'TIMEOUT');
+
+    const cont = await dispatch({ op: 'case.continue', root: tp.root });
+    assert.equal(cont.ok, true);
+    assert.equal(tp.project.file().timeLimitAtMs, null);
+    const run = await dispatch({
+      op: 'run',
+      root: tp.root,
+      input: { argv: [NODE, '-e', 'console.log("after continue")'] },
+    });
+    assert.equal(run.ok, true);
+  } finally {
+    tp.cleanup();
+  }
+});
+
 test('case.map exposes route state and clearNegatives accepts one id', async () => {
   const tp = makeProject();
   try {

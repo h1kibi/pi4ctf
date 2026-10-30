@@ -227,6 +227,7 @@ export function compilePacket(
       `- commands: ${cmds}/${TURN_BUDGET} used; ${remaining} remaining (${health})`,
       `- restarts: ${file.counters.restart ?? 0}/3`,
       `- continues: ${file.counters.continue ?? 0}`,
+      `- time limit: ${file.timeLimitAtMs != null ? `${Math.max(0, Math.round((file.timeLimitAtMs - Date.now()) / 60000))} min left` : 'none'}`,
       `- wall clock: ${file.deadlineMs ? `${Math.max(0, Math.round((file.deadlineMs - Date.now()) / 60000))} min left` : 'n/a'}`,
       baseline
         ? `- category ${file.category}: median ${baseline.median} runs to solve (n=${baseline.n})`

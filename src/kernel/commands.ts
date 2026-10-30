@@ -30,6 +30,9 @@ export function allocateCommand(file: ProjectFile, ctfDir: string, enforceBudget
     if (file.deadlineMs !== null && Date.now() > file.deadlineMs - 60_000) {
       throw new KernelError('TIMEOUT', 'deadline reached; case must restart or close');
     }
+    if (file.timeLimitAtMs != null && Date.now() >= file.timeLimitAtMs) {
+      throw new KernelError('TIMEOUT', 'time limit reached; report progress or continue');
+    }
   }
   file.counters.command = (file.counters.command ?? 0) + 1;
   const prior = Math.max(file.counters.commandSeq ?? 0, maxCommandSeq(ctfDir));

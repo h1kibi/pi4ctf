@@ -312,6 +312,8 @@ export interface ProjectFile {
   /** SHA-256 of the oracle file at project.init; null = oracle absent then. */
   oracleHash: string | null;
   deadlineMs: number | null;
+  /** Human-set reporting checkpoint; blocks new executions after this time. */
+  timeLimitAtMs?: number | null;
   allowedHosts: string[];
   counters: Record<string, number>;
   revisions: Record<string, number>;

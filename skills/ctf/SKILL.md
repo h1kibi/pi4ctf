@@ -185,6 +185,7 @@ The kernel never auto-submits.
 
 - 30 execution slots per case (`run`, `session.open`, or `artifact.ingest`; one `run` is one slot, a `probes` batch is 1–16 items); 120 s default per command; 600 s max. The packet shows remaining/health and, when prior completed cases exist, the category median runs-to-solve; environment incidents are listed separately from route dead ends.
 - `case_restart` is not a model tool. If the budget is exhausted, report `LIMIT` to the user and stop; only the human can reset it with `/ctf continue` or `/ctf restart`.
+- A human can set a hard checkpoint with `/ctf min:<N> [prompt]`. At expiry, new `run`/`session` commands are blocked and the extension asks for a progress report. `/ctf continue` clears it.
 - Use `session` for long-lived processes rather than many one-shot runs. Opening a session consumes one command; its I/O is not charged per keystroke.
 - At a natural boundary, run `/ctf handoff` to persist resume state.
 
@@ -258,6 +259,7 @@ If `run` returns `LIMIT`, report the exhausted budget to the user and stop; do n
 /ctf map
 /ctf restart
 /ctf continue [prompt]
+/ctf min:<minutes> [prompt]
 /ctf configure [flagFormat] [oracleRef] [host|docker] [dockerImage] [target]
 /ctf wp [template] [output]
 ```

@@ -122,6 +122,7 @@ export class Project {
       oracle: spec.oracle,
       oracleHash: initialOracleHash,
       deadlineMs: spec.deadlineMs ?? null,
+      timeLimitAtMs: null,
       allowedHosts: spec.allowedHosts ?? ['*'],
       counters: { command: 0, commandSeq: 0, claim: 0, fact: 0, negative: 0, event: 0, session: 0 },
       revisions: { event: 0, claim: 0, fact: 0, negative: 0 },
@@ -228,11 +229,28 @@ export class Project {
         throw new KernelError('CONFLICT', `case is ${f.status}; continue requires an active case`);
       }
       f.counters.command = 0;
+      f.timeLimitAtMs = null;
       continues = (f.counters.continue ?? 0) + 1;
       f.counters.continue = continues;
     });
     this.appendEvent('case.continue', 'adapter', { continue: continues, command: 0 });
     return { continues, command: 0 };
+  }
+
+  /** Human-only time checkpoint. minutes=0 clears it. */
+  setTimeLimit(minutes: number | null): { timeLimitAtMs: number | null } {
+    let at: number | null = null;
+    if (minutes !== null && minutes !== 0) {
+      if (!Number.isInteger(minutes) || minutes < 1 || minutes > 7 * 24 * 60) {
+        throw new KernelError('INVALID_REQUEST', 'time limit must be 1..10080 minutes, or 0 to clear');
+      }
+      at = Date.now() + minutes * 60_000;
+    }
+    this.mutateFile((f) => {
+      f.timeLimitAtMs = at;
+    });
+    this.appendEvent('case.time', 'adapter', { minutes: at === null ? 0 : minutes, timeLimitAtMs: at });
+    return { timeLimitAtMs: at };
   }
 
   /** Last successful flagFormat change, for audit in the flag response. */
@@ -306,6 +324,7 @@ export class Project {
       backend: f.backend,
       target: f.target ?? null,
       deadlineMs: f.deadlineMs,
+      timeLimitAtMs: f.timeLimitAtMs ?? null,
       counters: f.counters,
       facts: { total: totalFacts, synthetic: syntheticFacts },
       revisions: f.revisions,
@@ -439,6 +458,7 @@ export class Project {
         throw new KernelError('LIMIT', `case restart limit reached (${restarts}/${maxRestarts})`);
       }
       file.counters.command = 0;
+      file.timeLimitAtMs = null;
       file.counters.restart = restarts + 1;
     });
     this.appendEvent('case.restart', 'adapter', { restart: restarts + 1, command: 0 });

@@ -63,6 +63,12 @@ export async function handleCase(req: Request, op: string, input: Record<string,
       const project = needRoot(req);
       return ok(op, project.continueBudget());
     }
+    case 'case.time': {
+      const project = needRoot(req);
+      const raw = input.minutes;
+      const minutes = raw === null || raw === 0 ? null : Number(raw);
+      return ok(op, project.setTimeLimit(minutes));
+    }
     case 'case.configure': {
       const project = needRoot(req);
       const target = input.target === undefined ? undefined : parseTarget(input.target);

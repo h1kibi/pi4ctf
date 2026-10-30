@@ -46,7 +46,7 @@ async function notifyRt(
   op: string,
   root: string,
   input: Record<string, unknown>,
-): Promise<void> {
+): Promise<boolean> {
   try {
     const res = await callRt(op, root, input);
     if (res.ok) {
@@ -54,8 +54,10 @@ async function notifyRt(
     } else {
       ctx.ui.notify(`${op} failed [${res.error?.code}]: ${res.error?.message}`, "error");
     }
+    return res.ok;
   } catch (err) {
     ctx.ui.notify(String(err), "error");
+    return false;
   }
 }
 
@@ -65,9 +67,31 @@ function sendPrompt(pi: ExtensionAPI, ctx: ExtensionContext, prompt: string): vo
   pi.sendUserMessage(text, ctx.isIdle() ? undefined : { deliverAs: "followUp" });
 }
 
+const timeTimers = new Map<string, NodeJS.Timeout>();
+
+function clearTimeTimer(root: string): void {
+  clearTimeout(timeTimers.get(root));
+  timeTimers.delete(root);
+}
+
+function scheduleTimeTimer(pi: ExtensionAPI, root: string, atMs: number | null): void {
+  clearTimeTimer(root);
+  if (atMs === null) return;
+  const delay = Math.max(0, atMs - Date.now());
+  const timer = setTimeout(() => {
+    timeTimers.delete(root);
+    pi.sendUserMessage(
+      "[PI4CTF TIME LIMIT] The human-set time limit has been reached. Do not issue new run or session commands. Report progress, blockers, and the next concrete step to the human, then wait.",
+      { deliverAs: "followUp" },
+    );
+  }, delay);
+  timer.unref();
+  timeTimers.set(root, timer);
+}
+
 function ctfCommand(pi: ExtensionAPI): void {
   pi.registerCommand("ctf", {
-    description: "pi4ctf case commands: init/status/handoff/map/restart/continue/configure/wp",
+    description: "pi4ctf case commands: init/status/handoff/map/restart/continue/min/configure/wp",
     handler: async (args, ctx) => {
       const words = shellWords(args.trim());
       const sub = (words.shift() ?? "help").toLowerCase();
@@ -82,6 +106,7 @@ function ctfCommand(pi: ExtensionAPI): void {
             "/ctf map",
             "/ctf restart",
             "/ctf continue [prompt]",
+            "/ctf min:<minutes> [prompt]",
             "/ctf configure [flagFormat] [oracleRef] [host|docker] [dockerImage] [target]",
             "/ctf wp [template-file-or-folder] [output-file]",
           ].join("\n"),
@@ -144,6 +169,28 @@ function ctfCommand(pi: ExtensionAPI): void {
         return;
       }
 
+      if (sub.startsWith("min:")) {
+        const match = /^min:(\d+)$/.exec(sub);
+        if (!match) {
+          ctx.ui.notify("usage: /ctf min:<minutes> [prompt]; use min:0 to clear", "error");
+          return;
+        }
+        const minutes = Number(match[1]);
+        const res = await callRt("case.time", root, { minutes });
+        if (!res.ok) {
+          ctx.ui.notify(`case.time failed [${res.error?.code}]: ${res.error?.message}`, "error");
+          return;
+        }
+        const limit = res.data?.timeLimitAtMs;
+        scheduleTimeTimer(pi, root, typeof limit === "number" ? limit : null);
+        ctx.ui.notify(
+          minutes === 0 ? "time limit cleared" : `time limit set: ${minutes} minute(s)`,
+          "info",
+        );
+        sendPrompt(pi, ctx, words.join(" "));
+        return;
+      }
+
       switch (sub) {
         case "status": {
           const [status, diagnostics] = await Promise.all([
@@ -169,9 +216,11 @@ function ctfCommand(pi: ExtensionAPI): void {
         case "map":
           await ctfMap(ctx, root);
           return;
-        case "restart":
-          await notifyRt(ctx, "case.restart", root, {});
+        case "restart": {
+          const restarted = await notifyRt(ctx, "case.restart", root, {});
+          if (restarted) clearTimeTimer(root);
           return;
+        }
         case "continue": {
           const prompt = words.join(" ").trim();
           const res = await callRt("case.continue", root, {});
@@ -180,6 +229,7 @@ function ctfCommand(pi: ExtensionAPI): void {
             return;
           }
           ctx.ui.notify(`case.continue: ${JSON.stringify(res.data ?? {})}`, "info");
+          clearTimeTimer(root);
           sendPrompt(pi, ctx, prompt);
           return;
         }
@@ -254,6 +304,9 @@ export default function pi4ctf(pi: ExtensionAPI): void {
     // Refresh every startup: old chal.json files predate ignore rules and
     // can keep core dumps/temp patch outputs in the packet.
     await refreshPreflight(ctx, root);
+    const status = await callRt("project.status", root, {});
+    const at = status.ok && typeof status.data?.timeLimitAtMs === "number" ? status.data.timeLimitAtMs : null;
+    scheduleTimeTimer(pi, root, at);
   });
 
   // Inject the kernel packet before each user-initiated run. Custom
@@ -302,6 +355,7 @@ export default function pi4ctf(pi: ExtensionAPI): void {
     seenOutcomesByRoot.clear();
     lastInjectedByRoot.clear();
     PREFLIGHT_DONE.clear();
+    for (const root of [...timeTimers.keys()]) clearTimeTimer(root);
     await sessions.close();
   });
 }
