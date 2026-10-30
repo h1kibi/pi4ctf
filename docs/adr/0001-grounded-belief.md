@@ -32,7 +32,7 @@ ZCode 答辩指出：vuln/cred 类结论本质是解释，不能全量代码推�
 
 - 内核维护 `predicates.json`，最小 schema：
   ```json
-  { "id": "...", "semver": "...", "claimType": ["exploit"], "requiredEvidence": ["artifact", "exit"], "check": "probe|parse|verifier" }
+  { "id": "...", "semver": "...", "claimType": ["exploit"], "requiredEvidence": ["artifact", "exit"] }
   ```
 - 版本化 = append-only：旧版本保留可重放，fixture 随版本冻结。
 - capability 可注册 predicate，但必须带 fixture；verify 时内核拒绝未注册 id。

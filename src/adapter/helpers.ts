@@ -1,11 +1,10 @@
-import * as fs from 'node:fs';
-import * as path from 'node:path';
 import { KernelError } from '../kernel/error.js';
 import { Project } from '../kernel/project.js';
 import { DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS } from '../kernel/run/exec.js';
 import { envContextOf } from '../providers/env/context.js';
 import { commandExists } from '../kernel/sysutil.js';
-import type { FlagLayers, Observation } from '../kernel/types.js';
+import { auditState } from '../kernel/state-audit.js';
+import type { FlagLayers } from '../kernel/types.js';
 import { doctorTools } from '../providers/env/store.js';
 import type { OkResponse, Request } from './types.js';
 
@@ -98,11 +97,6 @@ export function safeOpen(root: string): Project | null {
   }
 }
 
-export function readObservation(project: Project, outcomeId: string): Observation {
-  const raw = fs.readFileSync(path.join(project.ctfDir, `observations/${outcomeId}.json`), 'utf8');
-  return JSON.parse(raw) as Observation;
-}
-
 export function failedLayers(layers: FlagLayers, detail: Record<string, string | null>): string {
   return Object.entries(layers)
     .filter(([, pass]) => !pass)
@@ -120,44 +114,8 @@ export function imageMime(buf: Buffer): string {
 
 export function doctor(project: Project): Record<string, unknown> {
   const file = project.file();
-  const issues: string[] = [];
-  for (const dir of ['.', 'artifacts', 'outcomes', 'claims', 'facts', 'negatives']) {
-    const abs = dir === '.' ? project.ctfDir : path.join(project.ctfDir, dir);
-    if (!fs.existsSync(abs)) continue;
-    for (const name of fs.readdirSync(abs)) {
-      if (name.startsWith('.tmp-')) issues.push(`stale tmp: ${dir}/${name}`);
-    }
-  }
-  for (const dir of ['outcomes', 'claims', 'facts', 'negatives', 'items']) {
-    const abs = path.join(project.ctfDir, dir);
-    if (!fs.existsSync(abs)) continue;
-    for (const name of fs.readdirSync(abs)) {
-      if (!name.endsWith('.json')) continue;
-      try {
-        JSON.parse(fs.readFileSync(path.join(abs, name), 'utf8'));
-      } catch {
-        issues.push(`unreadable json: ${dir}/${name}`);
-      }
-    }
-  }
-  const artifactsDir = path.join(project.ctfDir, 'artifacts');
-  const artifacts = { files: 0, bytes: 0 };
-  if (fs.existsSync(artifactsDir)) {
-    for (const entry of fs.readdirSync(artifactsDir, { withFileTypes: true })) {
-      if (!entry.isFile()) continue;
-      artifacts.files += 1;
-      artifacts.bytes += fs.statSync(path.join(artifactsDir, entry.name)).size;
-    }
-  }
-  const lockPath = path.join(project.ctfDir, '.lock');
-  if (fs.existsSync(lockPath)) {
-    try {
-      const info = JSON.parse(fs.readFileSync(lockPath, 'utf8')) as { pid?: number; ts?: number };
-      if (typeof info.ts === 'number' && Date.now() - info.ts > 120_000) issues.push('stale lock');
-    } catch {
-      issues.push('unreadable lock');
-    }
-  }
+  const audit = auditState(project);
+  const issues = [...audit.issues];
   const backendAvailable = file.backend === 'host' || commandExists('docker');
   if (!backendAvailable) issues.push(`backend ${file.backend} unavailable (docker not found)`);
   const tools = doctorTools(envContextOf(project));
@@ -165,7 +123,7 @@ export function doctor(project: Project): Record<string, unknown> {
     project: file.id,
     backend: file.backend,
     backendAvailable,
-    artifacts,
+    artifacts: audit.artifacts,
     tools,
     toolsScope: 'env-memory',
     toolsScopeNote: 'from env_memory; use env_memory probe to refresh the current backend',

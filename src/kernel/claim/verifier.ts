@@ -10,6 +10,7 @@ import { KernelError } from '../error.js';
 import { Ledger } from '../ledger/store.js';
 import { Project } from '../project.js';
 import { targetRef } from '../target.js';
+import { negativeSpecFor } from '../negative.js';
 import { checkQuote } from '../classify/classify.js';
 import type { Claim, EvidenceItem, Observation, ProcessOutcome } from '../types.js';
 
@@ -21,7 +22,6 @@ export interface PredicateSpec {
   id: string; // name@semver
   claimTypes: string[];
   requiredEvidence: ('outcome' | 'quote')[];
-  check: 'probe' | 'parse';
 }
 
 export const PREDICATES: Record<string, PredicateSpec> = {
@@ -29,25 +29,21 @@ export const PREDICATES: Record<string, PredicateSpec> = {
     id: 'process.exit-zero@1.0.0',
     claimTypes: ['observed'],
     requiredEvidence: ['outcome'],
-    check: 'probe',
   },
   'output.contains@1.0.0': {
     id: 'output.contains@1.0.0',
     claimTypes: ['interpreted'],
     requiredEvidence: ['outcome', 'quote'],
-    check: 'parse',
   },
   'http.length_delta@1.0.0': {
     id: 'http.length_delta@1.0.0',
     claimTypes: ['differential'],
     requiredEvidence: ['outcome'],
-    check: 'parse',
   },
   'time.delta@1.0.0': {
     id: 'time.delta@1.0.0',
     claimTypes: ['time-based'],
     requiredEvidence: ['outcome'],
-    check: 'probe',
   },
 };
 
@@ -268,15 +264,16 @@ export class ClaimVerifier {
       claim.rejectedReason = result.reason;
       this.ledger.saveClaim(claim);
       this.project.appendEvent('claim.rejected', 'kernel', { id: claim.id, predicate: predicate.id, reason: result.reason });
+      const negative = negativeSpecFor(null, 'probe-contradicted');
       this.ledger.addNegative({
         id: undefined,
         signature: claim.signature,
-        failureClass: 'probe-contradicted',
-        family: 'approach',
-        transient: false,
+        failureClass: negative.failureClass,
+        family: negative.family,
+        transient: negative.transient,
         condemnedBy: predicate.id,
-        unblockOn: 'probe_version',
-        expiresAt: null,
+        unblockOn: negative.unblockOn,
+        expiresAt: negative.ttlMs === null ? null : Date.now() + negative.ttlMs,
         blockScope: 'route',
         artifactRef: ctx.outcomes[0]?.stdout.rawRef ?? null,
         route: claim.id,

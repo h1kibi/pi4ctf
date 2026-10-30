@@ -14,6 +14,7 @@ import type {
   EvidenceItem,
   Fact,
   NegativeEntry,
+  Observation,
   ProcessOutcome,
 } from '../types.js';
 
@@ -26,6 +27,10 @@ export class Ledger {
     const p = path.join(this.project.ctfDir, `outcomes/${id}.json`);
     if (!fs.existsSync(p)) throw new KernelError('NOT_FOUND', `outcome ${id} not found`);
     return readJson<ProcessOutcome>(p);
+  }
+
+  getObservation(id: string): Observation {
+    return JSON.parse(this.readArtifact(`observations/${id}.json`)) as Observation;
   }
 
   listOutcomes(): ProcessOutcome[] {

@@ -62,81 +62,57 @@ function inspectOracle(project: Project, value: string, file: ReturnType<Project
 }
 
 
-function artifactIsSynthetic(project: Project, ref: string): boolean {
+interface ArtifactMeta {
+  target: string | null;
+  instanceId: string | null;
+  synthetic: boolean;
+}
+
+function buildArtifactIndex(project: Project): Map<string, ArtifactMeta> {
+  const index = new Map<string, ArtifactMeta>();
   const outcomesDir = path.join(project.ctfDir, 'outcomes');
-  if (!fs.existsSync(outcomesDir)) return false;
+  if (!fs.existsSync(outcomesDir)) return index;
+  const itemsDir = path.join(project.ctfDir, 'items');
+  const itemNames = fs.existsSync(itemsDir) ? fs.readdirSync(itemsDir) : [];
   for (const name of fs.readdirSync(outcomesDir)) {
     if (!name.endsWith('.json')) continue;
     const o = JSON.parse(fs.readFileSync(path.join(outcomesDir, name), 'utf8')) as {
       id?: string;
+      target?: string | null;
+      instanceId?: string | null;
       synthetic?: boolean;
       stdout?: { rawRef?: string; shapedRef?: string };
       stderr?: { rawRef?: string; shapedRef?: string };
     };
-    if (!o.synthetic) continue;
-    if ([o.stdout?.rawRef, o.stdout?.shapedRef, o.stderr?.rawRef, o.stderr?.shapedRef].includes(ref)) {
-      return true;
+    const meta: ArtifactMeta = {
+      target: o.target ?? null,
+      instanceId: o.instanceId ?? null,
+      synthetic: o.synthetic === true,
+    };
+    for (const stream of [o.stdout, o.stderr]) {
+      if (stream?.rawRef) index.set(stream.rawRef, meta);
+      if (stream?.shapedRef) index.set(stream.shapedRef, meta);
     }
     if (!o.id) continue;
-    const itemsDir = path.join(project.ctfDir, 'items');
-    if (!fs.existsSync(itemsDir)) continue;
-    for (const itemName of fs.readdirSync(itemsDir)) {
+    for (const itemName of itemNames) {
       if (!itemName.startsWith(`${o.id}.`) || !itemName.endsWith('.json')) continue;
       const item = JSON.parse(fs.readFileSync(path.join(itemsDir, itemName), 'utf8')) as {
         stdout?: { rawRef?: string; shapedRef?: string };
         stderr?: { rawRef?: string; shapedRef?: string };
       };
-      if ([item.stdout?.rawRef, item.stdout?.shapedRef, item.stderr?.rawRef, item.stderr?.shapedRef].includes(ref)) {
-        return true;
+      for (const stream of [item.stdout, item.stderr]) {
+        if (stream?.rawRef) index.set(stream.rawRef, meta);
+        if (stream?.shapedRef) index.set(stream.shapedRef, meta);
       }
     }
   }
-  return false;
+  return index;
 }
 
-function artifactFromCurrentTarget(project: Project, ref: string, target: TargetSpec | null): boolean {
+function artifactMatchesTarget(meta: ArtifactMeta, target: TargetSpec | null): boolean {
   if (!target) return true;
-  const wanted = targetRef(target);
-  const outcomesDir = path.join(project.ctfDir, 'outcomes');
-  if (!fs.existsSync(outcomesDir)) return false;
-  const allowed = new Set<string>();
-  for (const name of fs.readdirSync(outcomesDir)) {
-    if (!name.endsWith('.json')) continue;
-    try {
-      const o = JSON.parse(fs.readFileSync(path.join(outcomesDir, name), 'utf8')) as {
-        id?: string;
-        target?: string | null;
-        instanceId?: string | null;
-        stdout?: { rawRef?: string; shapedRef?: string };
-        stderr?: { rawRef?: string; shapedRef?: string };
-      };
-      const same = o.target === wanted &&
-        (target.instanceId === undefined || (o.instanceId ?? '') === target.instanceId);
-      if (!same) continue;
-      for (const stream of [o.stdout, o.stderr]) {
-        if (stream?.rawRef) allowed.add(stream.rawRef);
-        if (stream?.shapedRef) allowed.add(stream.shapedRef);
-      }
-      if (!o.id) continue;
-      const itemsDir = path.join(project.ctfDir, 'items');
-      if (fs.existsSync(itemsDir)) {
-        for (const itemName of fs.readdirSync(itemsDir)) {
-          if (!itemName.startsWith(`${o.id}.`) || !itemName.endsWith('.json')) continue;
-          const item = JSON.parse(fs.readFileSync(path.join(itemsDir, itemName), 'utf8')) as {
-            stdout?: { rawRef?: string; shapedRef?: string };
-            stderr?: { rawRef?: string; shapedRef?: string };
-          };
-          for (const stream of [item.stdout, item.stderr]) {
-            if (stream?.rawRef) allowed.add(stream.rawRef);
-            if (stream?.shapedRef) allowed.add(stream.shapedRef);
-          }
-        }
-      }
-    } catch {
-      // skip corrupt outcomes; doctor reports them
-    }
-  }
-  return allowed.has(ref);
+  if (meta.target !== targetRef(target)) return false;
+  return target.instanceId === undefined || (meta.instanceId ?? '') === target.instanceId;
 }
 
 export interface FlagVerdict {
@@ -185,13 +161,16 @@ export function submitFlag(
 
   // Layer 2: provenance — flag must appear in a stored artifact -------------
   let provenanceRef: string | null = null;
+  let artifactIndex: Map<string, ArtifactMeta> | null = null;
   if (layers.format) {
+    artifactIndex = buildArtifactIndex(project);
     const artifactsDir = path.join(project.ctfDir, 'artifacts');
     if (fs.existsSync(artifactsDir)) {
       outer: for (const name of fs.readdirSync(artifactsDir).sort()) {
         if (!name.endsWith('.log')) continue;
         const ref = `artifacts/${name}`;
-        if (!artifactFromCurrentTarget(project, ref, file.target ?? null)) continue;
+        const meta = artifactIndex.get(ref);
+        if (!meta || !artifactMatchesTarget(meta, currentTarget)) continue;
         const p = path.join(artifactsDir, name);
         const buf = fs.readFileSync(p);
         if (buf.includes(Buffer.from(value, 'utf8'))) {
@@ -228,7 +207,8 @@ export function submitFlag(
     layers.evidence = refs.some(
       (r) => facts.some((f) => f.id === r) || claims.some((c) => c.id === r),
     );
-    syntheticEvidence = syntheticRef || (provenanceRef ? artifactIsSynthetic(project, provenanceRef) : false);
+    const provenanceSynthetic = provenanceRef !== null && artifactIndex?.get(provenanceRef)?.synthetic === true;
+    syntheticEvidence = syntheticRef || provenanceSynthetic;
     if (syntheticEvidence) {
       layers.evidence = false;
       detail.evidence = 'synthetic evidence cannot validate a real flag; use a separate dry-run project';

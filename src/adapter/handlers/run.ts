@@ -4,10 +4,11 @@ import { commandClassOf, targetOf } from '../../kernel/classify/classify.js';
 import { runExec, runProbes, type ProbeSpec } from '../../kernel/run/exec.js';
 import { checkRunScope, checkTargetScope, scanInjection } from '../../kernel/security.js';
 import { isLoopbackHost, parseTarget, targetFromEnv } from '../../kernel/target.js';
-import { signature } from '../../kernel/shape/signature.js';
-import { assertCaseBudget, negativeSpecFor, reachabilityWithRecovery, routeSignature } from '../policy.js';
+import { signature, routeSignature } from '../../kernel/shape/signature.js';
+import { negativeSpecFor } from '../../kernel/negative.js';
+import { assertCaseBudget, reachabilityWithRecovery } from '../policy.js';
 import type { Request, Response } from '../types.js';
-import { argvOf, needRoot, ok, readObservation } from '../helpers.js';
+import { argvOf, needRoot, ok } from '../helpers.js';
 
 export async function handleRun(req: Request, op: string, input: Record<string, unknown>): Promise<Response> {
   switch (op) {
@@ -132,7 +133,7 @@ export async function handleRun(req: Request, op: string, input: Record<string, 
       });
       // Stage C on the run path: failed outcomes enter the negative ledger
       // with code-owned classes (docs/design.md §4.2, ADR 0002 §4).
-      const obs = readObservation(project, outcome.id);
+      const obs = ledger.getObservation(outcome.id);
       // exec-local is an opaque script (`python -c`, `node -e`, ...). Its
       // normalized signature collapses different programs to one route, so a
       // timeout/nonzero from one script must not condemn the shape. The model

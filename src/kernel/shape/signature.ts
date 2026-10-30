@@ -40,6 +40,11 @@ export interface SignatureResult {
   slots: number;
 }
 
+/** Canonical key for the negative ledger. */
+export function routeSignature(intentClass: string, signatureText: string): string {
+  return `${intentClass}|signature@1:${signatureText}`;
+}
+
 export function signature(argv: string[]): SignatureResult {
   const slotByValue = new Map<string, number>();
   let nextSlot = 0;

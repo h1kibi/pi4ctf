@@ -15,7 +15,7 @@ import { KernelError } from '../error.js';
 import { atomicWriteFile, resolveInside, sha256 } from '../fsutil.js';
 import { Project } from '../project.js';
 import { classify, commandClassOf, contractFor, statusFailureClass, targetOf } from '../classify/classify.js';
-import { canonicalKey, signature } from '../shape/signature.js';
+import { canonicalKey, routeSignature, signature } from '../shape/signature.js';
 import { shape } from '../shape/shape.js';
 import { baseEnv, commandExists, resolveBash } from '../sysutil.js';
 import { checkRunScope } from '../security.js';
@@ -506,7 +506,7 @@ export async function runProbes(
           bodyDigest = sha256(Buffer.from(httpSpec.body, 'utf8'));
         }
         sig = signature(['http', (httpSpec.method ?? 'GET').toUpperCase(), httpSpec.url, ...(bodyDigest ? [bodyDigest] : [])]);
-        const httpBlocked = new Ledger(project).blockedSignature(`${intentClass}|signature@1:${sig.signature}`);
+        const httpBlocked = new Ledger(project).blockedSignature(routeSignature(intentClass, sig.signature));
         if (httpBlocked && !httpBlocked.transient) {
           throw new KernelError('CONFLICT', `probe hard-blocked: ${httpBlocked.failureClass}; unblockOn=${httpBlocked.unblockOn}`);
         }
@@ -546,7 +546,7 @@ export async function runProbes(
         checkRunScope(project, prep.userArgv);
         intentClass = commandClassOf(prep.userArgv);
         sig = signature(prep.userArgv);
-        const commandBlocked = new Ledger(project).blockedSignature(`${intentClass}|signature@1:${sig.signature}`);
+        const commandBlocked = new Ledger(project).blockedSignature(routeSignature(intentClass, sig.signature));
         if (commandBlocked && !commandBlocked.transient) {
           throw new KernelError('CONFLICT', `probe hard-blocked: ${commandBlocked.failureClass}; unblockOn=${commandBlocked.unblockOn}`);
         }
@@ -639,7 +639,7 @@ export async function runProbes(
         target,
         intentClass,
         canonicalKey: probeOutcome.canonicalKey,
-        routeSignature: `${intentClass}|signature@1:${sig.signature}`,
+        routeSignature: routeSignature(intentClass, sig.signature),
         durationMs: raw.durationMs,
       };
       atomicWriteFile(path.join(project.ctfDir, `items/${itemId}.json`), JSON.stringify(item, null, 2));
