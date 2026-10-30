@@ -55,8 +55,7 @@ Image contents differ. Do not assume a toolchain from the image name; verify wit
 `env_memory probe` (or `docker run --rm <image> sh -lc 'command -v ...'`) before using it.
 Target services on the host are reached via `host.docker.internal:<port>`.
 
-Read `/ctf context` if you need the current packet. The extension also injects the
-kernel packet before each user run.
+The extension injects the kernel packet before each user run. Use `/ctf handoff` if you need a persisted copy of the packet and resume state.
 
 ## Tools
 
@@ -255,13 +254,11 @@ If `run` returns `LIMIT`, report the exhausted budget to the user and stop; do n
 
 ```text
 /ctf status
-/ctf context
-/ctf doctor
 /ctf handoff
 /ctf plan <next step>
 /ctf restart
-/ctf close [completed|failed|stopped]
+/ctf continue [prompt]
 /ctf clear-soft
 /ctf configure [flagFormat] [oracleRef] [host|docker] [dockerImage] [target]
-/ctf complete
+/ctf wp [template] [output]
 ```

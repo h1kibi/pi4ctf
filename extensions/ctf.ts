@@ -19,7 +19,7 @@ import {
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import {
-  PACKAGE_ROOT, RT_PATH, seenOutcomesByRoot, lastInjectedByRoot, PREFLIGHT_DONE,
+  seenOutcomesByRoot, lastInjectedByRoot, PREFLIGHT_DONE,
   callRt, ensureAutoProject, findProjectRoot, refreshPreflight, sessions,
 } from "./shared.js";
 import { envMemoryTool } from "./tools/env.js";
@@ -66,7 +66,7 @@ function sendPrompt(pi: ExtensionAPI, ctx: ExtensionContext, prompt: string): vo
 
 function ctfCommand(pi: ExtensionAPI): void {
   pi.registerCommand("ctf", {
-    description: "pi4ctf case commands: init/status/context/handoff/doctor/preflight/plan/restart/continue/clear-soft/configure/wp",
+    description: "pi4ctf case commands: init/status/handoff/plan/restart/continue/clear-soft/configure/wp",
     handler: async (args, ctx) => {
       const words = shellWords(args.trim());
       const sub = (words.shift() ?? "help").toLowerCase();
@@ -77,17 +77,13 @@ function ctfCommand(pi: ExtensionAPI): void {
           [
             "/ctf init [flagFormat] [oracleRef] [host|docker] [category] [dockerImage] [target]",
             "/ctf status",
-            "/ctf context",
             "/ctf handoff",
-            "/ctf doctor",
-            "/ctf preflight",
             "/ctf plan <next>",
             "/ctf restart",
             "/ctf continue [prompt]",
             "/ctf clear-soft",
             "/ctf configure [flagFormat] [oracleRef] [host|docker] [dockerImage] [target]",
             "/ctf wp [template-file-or-folder] [output-file]",
-            "/ctf debug",
           ].join("\n"),
           "info",
         );
@@ -142,18 +138,6 @@ function ctfCommand(pi: ExtensionAPI): void {
         return;
       }
 
-      if (sub === "debug") {
-        ctx.ui.notify(
-          JSON.stringify(
-            { execPath: process.execPath, rt: RT_PATH, packageRoot: PACKAGE_ROOT, cwd: ctx.cwd },
-            null,
-            2,
-          ),
-          "info",
-        );
-        return;
-      }
-
       const root = cwdRoot ?? (process.env.PI4CTF_ROOT ? path.resolve(process.env.PI4CTF_ROOT) : ctx.cwd);
       if (!fs.existsSync(path.join(root, ".ctf", "project.json"))) {
         ctx.ui.notify(`no project at ${root}; run /ctf init`, "error");
@@ -161,21 +145,26 @@ function ctfCommand(pi: ExtensionAPI): void {
       }
 
       switch (sub) {
-        case "status":
-          await notifyRt(ctx, "project.status", root, {});
+        case "status": {
+          const [status, diagnostics] = await Promise.all([
+            callRt("project.status", root, {}),
+            callRt("case.doctor", root, {}),
+          ]);
+          if (!status.ok) {
+            ctx.ui.notify(`project.status failed [${status.error?.code}]: ${status.error?.message}`, "error");
+            return;
+          }
+          ctx.ui.notify(
+            JSON.stringify({
+              ...status.data,
+              diagnostics: diagnostics.ok ? diagnostics.data : { error: diagnostics.error },
+            }, null, 2).slice(0, 3000),
+            "info",
+          );
           return;
-        case "context":
-          await notifyRt(ctx, "case.context", root, {});
-          return;
+        }
         case "handoff":
           await notifyRt(ctx, "case.handoff", root, {});
-          return;
-        case "doctor":
-          await notifyRt(ctx, "case.doctor", root, {});
-          return;
-        case "preflight":
-          await notifyRt(ctx, "case.preflight", root, {});
-          lastInjectedByRoot.delete(root);
           return;
         case "plan": {
           const next = words.join(" ").trim();
