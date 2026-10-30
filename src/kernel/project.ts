@@ -24,7 +24,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { atomicWriteFile, FileLock, readJson, readJsonIfExists, rootIdentity, sha256 } from './fsutil.js';
 import { KernelError } from './error.js';
-import { MAX_CASE_RESTARTS } from './types.js';
+import { MAX_CASE_RESTARTS, TURN_BUDGET } from './types.js';
 import { normalizeTarget, sameTarget } from './target.js';
 import { oracleBindingError, oracleFileHash, readOracle } from './oracle.js';
 import type { EventRecord, PlanBlock, ProjectFile, TargetSpec } from './types.js';
@@ -188,18 +188,47 @@ export class Project {
     };
     let commandSeq = 0;
     const file = this.mutateFile((f) => {
-      f.counters[kind] = (f.counters[kind] ?? 0) + 1;
       if (kind === 'command') {
-        // Budget and id sequence are separate: restart resets the former, but
-        // old cmd-* files must never be overwritten. Existing projects migrate
-        // by starting after the largest id already on disk.
-        const prior = Math.max(f.counters.commandSeq ?? 0, this.maxCommandSeq());
-        commandSeq = prior + 1;
-        f.counters.commandSeq = commandSeq;
+        commandSeq = this.allocateCommand(f, false);
+        return;
       }
+      f.counters[kind] = (f.counters[kind] ?? 0) + 1;
     });
     const seq = kind === 'command' ? commandSeq : file.counters[kind];
     return { id: `${prefixes[kind]}${String(seq).padStart(4, '0')}`, seq };
+  }
+
+  /** Reserve a command slot and id under one lock. Budget and deadline are
+   *  checked at allocation time, so concurrent processes cannot overspend. */
+  reserveCommand(): { id: string; seq: number } {
+    let commandSeq = 0;
+    this.mutateFile((f) => {
+      commandSeq = this.allocateCommand(f, true);
+    });
+    return { id: `cmd-${String(commandSeq).padStart(4, '0')}`, seq: commandSeq };
+  }
+
+  private allocateCommand(file: ProjectFile, enforceBudget: boolean): number {
+    if (enforceBudget) {
+      if (file.status !== 'active') {
+        throw new KernelError('CONFLICT', `case is ${file.status}; command allocation requires an active case`);
+      }
+      const turns = file.counters.command ?? 0;
+      if (turns >= TURN_BUDGET) {
+        throw new KernelError('LIMIT', `turn budget exhausted (${turns}/${TURN_BUDGET} commands); case must restart or close`);
+      }
+      if (file.deadlineMs !== null && Date.now() > file.deadlineMs - 60_000) {
+        throw new KernelError('TIMEOUT', 'deadline reached; case must restart or close');
+      }
+    }
+    file.counters.command = (file.counters.command ?? 0) + 1;
+    // Budget and id sequence are separate: restart resets the former, but
+    // old cmd-* files must never be overwritten. Existing projects migrate
+    // by starting after the largest id already on disk.
+    const prior = Math.max(file.counters.commandSeq ?? 0, this.maxCommandSeq());
+    const seq = prior + 1;
+    file.counters.commandSeq = seq;
+    return seq;
   }
 
   /** Largest existing cmd-NNNN id (used to migrate projects created before the

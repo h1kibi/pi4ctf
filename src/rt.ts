@@ -116,7 +116,12 @@ async function handleSessionLine(
     const state = mgr.open({ argv, tty: msg.tty === true });
     // A session is one long-running command; its I/O is not charged per
     // keystroke. Counting the open prevents a post-budget session bypass.
-    project.allocId('command');
+    try {
+      project.reserveCommand();
+    } catch (err) {
+      mgr.close(state.id);
+      throw err;
+    }
     bySession.set(state.id, { mgr, root });
     return { ok: true, id: state.id, artifact: state.artifact, exited: false };
   }

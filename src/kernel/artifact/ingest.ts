@@ -91,7 +91,7 @@ export function ingestArtifact(project: Project, input: IngestInput): IngestResu
   const source = fs.readFileSync(src);
   const raw = input.transform ? decodeTransform(source, input.transform) : source;
   const sourceSha256 = sha256(source);
-  const { id } = project.allocId('command');
+  const { id } = project.reserveCommand();
   const stem = safeName(input.name ?? `ingest-${randomUUID()}`);
   const base = `artifacts/${id}-${stem}`;
   const rawRef = `${base}.raw.log`;

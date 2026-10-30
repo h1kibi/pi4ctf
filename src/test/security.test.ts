@@ -187,6 +187,7 @@ test('budget gate: turn budget exhausted -> LIMIT without executing', async () =
     });
     assert.equal(res.ok, false);
     assert.equal(res.ok ? '' : res.error.code, 'LIMIT');
+    assert.throws(() => tp.project.reserveCommand(), /turn budget exhausted/);
   } finally {
     tp.cleanup();
   }

@@ -454,7 +454,7 @@ export async function runProbes(
 ): Promise<RunResult> {
   if (probes.length < 1 || probes.length > 16) throw new KernelError('LIMIT', 'probes must contain 1..16 items');
   const file = project.file();
-  const { id: parentId } = project.allocId('command');
+  const { id: parentId } = project.reserveCommand();
   const parentStdout = emptyStream(parentId, 'stdout', project);
   const parentStderr = emptyStream(parentId, 'stderr', project);
   const items: EvidenceItem[] = [];
@@ -808,6 +808,7 @@ export async function runExec(project: Project, req: RunRequest): Promise<RunRes
   // adapter's signature gate computed.
   const intentClass = commandClassOf(prep.userArgv);
   const contract = contractFor(intentClass);
+  const { id } = project.reserveCommand();
 
   let raw: RawRun;
   try {
@@ -818,7 +819,6 @@ export async function runExec(project: Project, req: RunRequest): Promise<RunRes
     throw new KernelError('INTERNAL', `exec failed: ${message}`);
   }
 
-  const { id } = project.allocId('command');
   const stdoutS = streamInfo(id, 'stdout', raw.stdout, raw.outputTruncated, project);
   const stderrS = streamInfo(id, 'stderr', stripHostNoise(raw.stderr), raw.outputTruncated, project);
   const parsedItems = parseEvidenceItems(project, id, raw.stdout, {
