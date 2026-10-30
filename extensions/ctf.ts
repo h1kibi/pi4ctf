@@ -27,6 +27,7 @@ import { deepseekSearchTool, deepseekFetchTool, deepseekVisionTool } from "./too
 
 import { ctfInitTool, runTool, sessionTool, procTool, claimTool, flagTool } from "./tools/core.js";
 import { casePlanTool, artifactIngestTool, casePreflightTool, caseClearNegativesTool, caseConfigureTool, caseEvidenceTool } from "./tools/case.js";
+import { gdbTool } from "./tools/gdb.js";
 import { buildWriteupPrompt, resolveWriteup } from "./writeup.js";
 import { ctfMap } from "./map.js";
 
@@ -323,6 +324,7 @@ export default function pi4ctf(pi: ExtensionAPI): void {
   pi.registerTool(runTool);
   pi.registerTool(sessionTool);
   pi.registerTool(procTool);
+  pi.registerTool(gdbTool);
   pi.registerTool(claimTool);
   pi.registerTool(flagTool);
   pi.registerTool(casePlanTool);

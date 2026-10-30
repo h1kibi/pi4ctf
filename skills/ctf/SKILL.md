@@ -84,6 +84,7 @@ Use these tools for challenge work:
   address. Host sessions use `/proc/<pid>`; docker sessions read PID 1 in the
   tracked container. Output is observation-only; use `artifact_ingest` if it
   must enter the claim chain. It does not consume the 30-execution budget.
+- `gdb` — persistent GDB/MI debugger: `start`, `attach`, `break`, `continue`, `step`, `next`, `stepi`, `nexti`, `finish`, `context`, `regs`, `backtrace`, `stack`, `mem`, `raw`, `kill`. `context` returns registers, backtrace, and disassembly in one call. Docker gdb uses `--cap-add SYS_PTRACE` and forces the image entrypoint to `gdb`; `.gdbinit` is disabled. `raw` blocks shell/python/source/dump/restore.
 - `case_preflight` — scan root ELF/libc and identify non-ELF formats in `.ctf/<caseId>/chal.json`; root files are unclassified; only the case workspace and `includeBuild=true` output dirs are generated; no mtime/suffix guessing for root; put generated outputs in the case workspace (packet shows its path; Docker uses `/challenge/workspace`), never root; `includeWorkspace`/`includeBuild` are scanned before the root; build/out/dist/... are ignored by default; returns `rootFiles` and `generated` arrays; `files`=ELF, `otherFiles`=non-ELF, `rootFiles`=non-generated roots (displayed oldest mtime first);
   (arch, PIE, canary, NX, RELRO, build-id, NEEDED/RUNPATH, interpreter, libc
   version; non-ELF format + lightweight arch/entry/archive summary). Run it after changing challenge files; it does not consume budget.

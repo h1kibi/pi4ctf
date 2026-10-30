@@ -295,6 +295,7 @@ test/
 | `case.doctor` | 后端/host 工具 digest/健康检查 |
 | `case.evidence` | 读 artifact；支持 grep/head/tail；probe batch 可汇总 children |
 | `proc` | 按 live session 读 `/proc` maps/libs/mem（observation，不占执行预算） |
+| `gdb` | 按 case 持有 GDB/MI 进程：start/attach、breakpoint、continue/step、context/regs/stack/mem/raw；Docker 用 `SYS_PTRACE`，`--nx` 禁止 `.gdbinit` |
 | `case.memory.*` | `add/cue/capture/search/get/list/invalidate/stats`；verified lesson、project/global scope、cue/fire ledger、redaction、注入文本 |
 | `case.complete` | verified Fact 门禁；写 completed |
 | `run.exec` | 同步命令；支持 target/env；返回 summary/artifact/hash |
@@ -531,7 +532,7 @@ trait Capability {
 
 ### 9.4 工具接入与环境扩展
 
-- 外部工具（gdb、nmap、tshark、Ghidra MCP、浏览器）先通过 `run`/`session` 接入；只有出现重复、可验证的结构化需求，才固化为 capability。
+- 外部工具（nmap、tshark、Ghidra MCP、浏览器）先通过 `run`/`session` 接入；gdb 已因 pwn 结构化需求固化为 `gdb` helper。只有出现重复、可验证的结构化需求，才固化为 capability。
 - MCP/浏览器/逆向留在 pi 适配层或外部进程；内核不内嵌 MCP client，不做浏览器控制。
 - 环境扩展只通过 `Backend` + `doctor` + `env.snapshot`；不硬编码发行版路径。
 - 不在内核里写题型分支；题型决策属于 skill/prompt。

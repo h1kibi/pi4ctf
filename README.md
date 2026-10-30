@@ -23,11 +23,11 @@
 | | 现状（可验证） | 目标（未实现） |
 |---|---|---|
 | 运行时 | `node dist/rt.js`（TypeScript 编译产物） | `bin/rt` Rust 单二进制 |
-| 模型面 | 16 个工具：4 动词 + 12 helpers | 不新增动词；能力走 `rt` 子命令 / capability / `py` SDK |
+| 模型面 | 17 个工具：4 动词 + 13 helpers | 不新增动词；能力走 `rt` 子命令 / capability / `py` SDK |
 | 状态 | `.ctf/`：events + artifacts + projections | 不变（文件即状态，无 daemon / DB） |
 | UI | `ctx.ui.notify` 文本提示 + `/ctf` 子命令 | TUI：状态文本 + HUD + 卡片 + `/ctf` overlay（只读） |
 | 记忆 | `env_memory`（宿主级环境事实） | 文件型 verified lesson（`memory-design.md`，later） |
-| 验证 | `npm test`：219 测试 / 214 通过 / 5 跳过（Windows 无 PTY；Docker pwn 测试需本机镜像） | Rust 性能指标：<5 MB、<20 ms 冷启动、RSS <32 MB |
+| 验证 | `npm test`：221 测试 / 216 通过 / 5 跳过（Windows 无 PTY；Docker pwn 测试需本机镜像） | Rust 性能指标：<5 MB、<20 ms 冷启动、RSS <32 MB |
 
 `docs/` 里标 `later` 或写“目标”的内容都**不代表已经存在**；代码里没有的东西不要当能力用。
 
@@ -118,8 +118,8 @@ mem 读取仍受 `kernel.yama.ptrace_scope` 限制。
 POSIX 宿主可用 Docker `-t`；Windows 的 Docker CLI 不能通过 pipe 挂 TTY，`tty:true` 会明确拒绝，改用 WSL 或 pwntools `stdin=PTY`。
 `npm run test:pwn-image -- <image>` 可检查镜像里的 `python3`/`pwntools`/`gdb`/`checksec`/`patchelf`。
 
-之后直接用四个动词：`run` / `session` / `claim` / `flag`。模型实际看到 pi4ctf 的 **16 个工具**（另有 MCP 工具，如 `mcp__ctf_rag__ctf_rag`）：4 动词 + 12 helpers —
-`ctf_init`、`env_memory`、`proc`、`artifact_ingest`、`case_preflight`、`case_evidence`、`case_configure`、`case_plan`、
+之后直接用四个动词：`run` / `session` / `claim` / `flag`。模型实际看到 pi4ctf 的 **17 个工具**（另有 MCP 工具，如 `mcp__ctf_rag__ctf_rag`）：4 动词 + 13 helpers —
+`ctf_init`、`env_memory`、`proc`、`gdb`、`artifact_ingest`、`case_preflight`、`case_evidence`、`case_configure`、`case_plan`、
 `case_clear_negatives`、`deepseek_search`、`deepseek_fetch`、`deepseek_vision`。
 skill `ctf` 会自动加载，也可用 `/skill:ctf` 强制加载。修改扩展后执行 `/reload`。
 
@@ -167,14 +167,14 @@ pi mcp list --json   # 机器可读状态
 ### 已安装状态
 
 安装方式：`pi install <pi4ctf-package>`；安装后 `pi list` 应显示该 package。
-Pwn 使用显式 `dockerImage`（`run`/`session` 都在容器内）；Docker pwn smoke 覆盖 pwntools 连宿主机 target、session cwd、容器 `proc`。
+Pwn 使用显式 `dockerImage`（`run`/`session`/`gdb` 都在容器内）；Docker pwn smoke 覆盖 pwntools 连宿主机 target、session cwd、容器 `proc` 和 GDB/MI 断点/context。
 当前限制：Docker TTY 只在 POSIX 宿主可用，Windows 的 Docker CLI 不能通过 pipe 挂 TTY；host session 的 PTY 也只在 POSIX；Kali 全量镜像尚未实机构建。
 
 ## 形态（当前）
 
 pi 1.4 加载一个扩展；扩展通过一行 JSON 调用 TS 内核。内核行为冻结后再移植 Rust。
 
-- `extensions/ctf.ts`：注册 4 个动词 + 12 个 helper（模型面共 16 个工具）、`/ctf` 命令、`CTF_MODE`，
+- `extensions/ctf.ts`：注册 4 个动词 + 13 个 helper（模型面共 17 个工具）、`/ctf` 命令、`CTF_MODE`，
   并在 `before_agent_start` 注入 kernel packet；`case` 核心 API 仍由 adapter/kernel 调用。
 - `src/kernel/`：状态与执行层 —— `run/exec`、`shape` + `signature`、`ledger`、`claim/verifier`、
   `flag`（四层）、`context/packet`、`preflight`、`proc`、`session`、`artifact`、`security`。
@@ -205,7 +205,7 @@ pi 1.4 加载一个扩展；扩展通过一行 JSON 调用 TS 内核。内核行
 | `claim` | 提交解释/断言 + quote；内核自动验证为 Fact/Negative |
 | `flag` | 提交 flag 候选；内核四层验证 |
 
-helper（12）：`ctf_init`（显式初始化，Java/归档题 fallback）、`env_memory`（工具环境记忆：recall/probe/remember/forget/note，支持 `image=<name>`）、`proc`（session 的 `/proc` 观察）、`artifact_ingest`、`case_preflight`（ELF/libc + 非 ELF 静态元数据）、
+helper（13）：`ctf_init`（显式初始化，Java/归档题 fallback）、`env_memory`（工具环境记忆：recall/probe/remember/forget/note，支持 `image=<name>`）、`proc`（session 的 `/proc` 观察）、`gdb`（持久 GDB/MI：start/attach、断点、continue/step、context、regs、stack、mem、raw）、`artifact_ingest`、`case_preflight`（ELF/libc + 非 ELF 静态元数据）、
 `case_evidence`（artifact 检索）、`case_configure`（flagFormat/oracle/target/dockerImage；backend 仅 `/ctf configure`，allowedHosts 仅 rt 协议）、`case_plan`、
 `case_clear_negatives`、`deepseek_search`、`deepseek_fetch`、`deepseek_vision`。
 `/ctf doctor`（host 工具 digest）是命令，不是模型工具；`case` 的 init/status/context/handoff/doctor 核心 API 仍由 adapter/kernel 调用。
