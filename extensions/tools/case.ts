@@ -64,8 +64,8 @@ export const casePreflightTool = defineTool({
   name: "case_preflight",
   label: "CTF preflight",
   description:
-    "Scan the challenge root for ELF/libc and identify non-ELF formats, writing .ctf/chal.json. Root files are unclassified; only workspace/ and includeBuild output dirs are generated; no mtime/suffix guessing; both requested dirs are scanned before the root; returns rootFiles/generated arrays. Static only; no exploit strategy.",
-  promptSnippet: "Collect static challenge metadata into .ctf/chal.json",
+    "Scan the challenge root for ELF/libc and identify non-ELF formats, writing .ctf/<caseId>/chal.json. Root files are unclassified; only workspace/ and includeBuild output dirs are generated; no mtime/suffix guessing; both requested dirs are scanned before the root; returns rootFiles/generated arrays. Static only; no exploit strategy.",
+  promptSnippet: "Collect static challenge metadata into .ctf/<caseId>/chal.json",
   promptGuidelines: [
     "Run case_preflight after init or when the challenge directory changes.",
     "Put generated binaries/screenshots/unpacked output in workspace/ or build/; root files are unclassified attachments.",

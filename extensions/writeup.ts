@@ -113,7 +113,7 @@ export function buildWriteupPrompt(args: {
     "Read the template first and follow its structure and requested fields.",
     "Then read the solved-case evidence from these paths:",
     "- .ctf/progress.md (packet + resume pointer)",
-    "- .ctf/chal.json (static challenge metadata)",
+    "- .ctf/<caseId>/chal.json (static challenge metadata)",
     "- .ctf/facts/*.json",
     "- .ctf/claims/*.json",
     "- .ctf/outcomes/*.json",

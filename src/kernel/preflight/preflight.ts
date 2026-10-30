@@ -225,7 +225,7 @@ export function challengeDigest(metadata: ChallengeMetadata, currentTarget: Targ
   const other = metadata.otherFiles ?? [];
   if (other.length > 0) {
     const total = metadata.otherFilesTotal ?? other.length;
-    lines.push(`- other files (non-ELF): ${total} found, ${other.length} indexed; full list in .ctf/chal.json`);
+    lines.push(`- other files (non-ELF): ${total} found, ${other.length} indexed; full list in .ctf/<caseId>/chal.json`);
   }
   const all = [...metadata.files, ...other];
   const rootFiles = all
@@ -236,6 +236,6 @@ export function challengeDigest(metadata: ChallengeMetadata, currentTarget: Targ
   if (rootFiles.length) lines.push(`- root files (ELF+non-ELF, unclassified): ${rootFiles.length} (${rootFiles.slice(0, 4).join(', ')}${rootFiles.length > 4 ? ', ...' : ''})`);
   if (generated.length) lines.push(`- generated (workspace/build): ${generated.length} (${generated.slice(0, 4).join(', ')}${generated.length > 4 ? ', ...' : ''})`);
   if (metadata.notes.length > 0) lines.push(`- notes: ${metadata.notes.slice(0, 4).join('; ')}`);
-  lines.push('- source: .ctf/chal.json (static preflight; verify runtime libc separately)');
+  lines.push('- source: .ctf/<caseId>/chal.json (static preflight; verify runtime libc separately)');
   return lines.join('\n');
 }
