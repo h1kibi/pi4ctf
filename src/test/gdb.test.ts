@@ -75,6 +75,8 @@ test('gdb: Docker MI breakpoint, stop context, and stack memory', { skip: SKIP, 
     assert.match(JSON.stringify(bp), /Breakpoint 1|breakpoint/);
     const run = await session.run();
     assert.match(JSON.stringify(run), /main|breakpoint/i);
+    const stepped = await session.step('stepi');
+    assert.ok(stepped.stop, JSON.stringify(stepped));
     const context = await session.context();
     assert.match(String(context.backtrace), /main/);
     assert.ok(Object.keys(context.registers as Record<string, string>).length > 0);
