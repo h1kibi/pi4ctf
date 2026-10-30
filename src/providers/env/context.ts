@@ -1,5 +1,6 @@
 /** Execution and ownership context for environment memory. */
-import { execHostOf, type ExecHost } from '../../kernel/run/exec.js';
+import { execHostOf } from '../../kernel/run/exec.js';
+import type { ExecHost } from '../../kernel/run/prepare.js';
 import type { Project } from '../../kernel/project.js';
 
 /**
